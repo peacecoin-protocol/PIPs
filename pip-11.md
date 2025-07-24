@@ -1,3 +1,16 @@
+---
+pip: 11
+title: Soulbound Token (SBT) Issuance upon KYC Verification
+proposer:  @Tetz on GitHub
+status: Draft
+type: Standards Track PIP
+category: Token & Community Design
+created: 2025-07-11
+requires: []
+replaces: []
+---
+
+
 # PIP-11: Soulbound Token (SBT) Issuance upon KYC Verification
 
 ## Required Information for Each PIP
