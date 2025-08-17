@@ -1,11 +1,10 @@
 ---
 pip: 1
 title: PEACE COIN Governance Framework
-proposer: RA (@ReiA0i on GitHub)
+proposer: AR (on GitHub)
 status: Draft
-type: Process
-category: Meta
-created: 2025-06-05
+type: Meta
+created: 2025-08-17
 requires: []
 replaces: []
 ---
@@ -33,10 +32,10 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
 **Purpose**: Covers proposals related to the core mechanisms and specifications of PEACE COIN, including protocol, token design, and interfaces. These define or revise the rules related to the system’s fundamental operations and the structure of value circulation.
 
 - **Core**: Proposals related to the central protocol logic, including the ARIGATO CREATION algorithm for token increment/decrement, changes to its parameters, and the "r coefficient" (a variable for adjusting token value).  
-*Example*: Contract specification changes, update logic for ARIGATO CREATION, design adjustments to the “r coefficient.”
-- **Application Interface**: Proposals related to the handling of tokens and associated data, including wallet UI, API design, user interactions, and integration with Dapps.  
+*Example*: Contract specification changes, update logic for ARIGATO CREATION, design adjustments to the "r coefficient."
+- **Application Interface**: Proposals related to the handling of tokens and associated data, including wallet UI, API design, user interactions, and integration with Dapps.
 *Example*: Token display UI specs, authentication/access design for Web APIs.
-- **Token & Community Design**: Proposals on the design of community tokens incorporating increment/decrement mechanisms, based on PCE (which itself has no such mechanisms), and proposals that define restrictions on their exchangeability to PCE (e.g., exchange ratios, conditions, and caps).  
+- **Token & Community Design**: Proposals on the design of community tokens incorporating increment/decrement mechanisms, based on PCE (which itself has no such mechanisms), and proposals that define restrictions on their exchangeability to PCE (e.g., exchange ratios, conditions, and caps).
 *Example*: Initial coefficient definition, exchange limitation structures.
 
 **2.2 Process PIP**  
@@ -44,13 +43,13 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
 *Example*: Revising proposal submission conditions, Signal Vote design, adjusting quorum and voting periods for Formal Votes, delegation system updates.
 
 **2.3 Meta PIP**  
-**Purpose**: Proposals that modify or expand the structure of the PIP system itself. These address the foundational aspects of the framework, such as adding or removing categories, defining lifecycle stages, and designing templates.  
-*Example*: Redefining PIP categories, updating guidelines, standardizing document formats.
+**Purpose**: Proposals that modify or expand the structure of the PIP system itself. These address the foundational aspects of the framework, such as adding or removing types, defining lifecycle stages, and designing templates.  
+*Example*: Redefining PIP types, updating guidelines, standardizing document formats.
 
 **2.4 Impact Indicators / Evaluation Design**  
-**Purpose**: Proposals concerning the design, definition, and adjustment of values that should be visualized and evaluation metrics. The goal is to understand the impact of proposals from multiple angles and support consensus building and institutional design by asking: “What should be measured, and how should it be visualized?”  
-- *Metrics Design (Examples of Indicators)*: Trust scores, redistribution and circulation rates, hidden emotional or contributory values, reaction scales based on empathy and sentiment.  
-- *Community Insight Map (Examples of Visualizations)*: Simulations of value circulation, impact comparisons before and after the proposal, distribution patterns of empathy and trust across regions or communities, and visualizations of network structures.
+**Purpose**: Proposals concerning the design, definition, and adjustment of values that should be visualized and evaluation metrics. The goal is to understand the impact of proposals from multiple angles and support consensus building and institutional design by asking: “What should be measured, and how should it be visualized?” 
+- *Metrics Design (Examples of Indicators): Trust scores, redistribution and circulation rates, hidden emotional or contributory values, reaction scales based on empathy and sentiment.
+- *Community Insight Map (Examples of Visualizations): Simulations of value circulation, impact comparisons before and after the proposal, distribution patterns of empathy and trust across regions or communities, and visualizations of network structures.
 
 **2.5 Informational PIP**  
 **Purpose**: Covers content that does not directly modify the system or protocol but contributes to community learning and informed decision-making. This includes knowledge sharing, experimental proposals, conceptual hypotheses, and case studies.  
@@ -62,14 +61,14 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
 ### 3. Proposal Template
 #### Required Information for Each PIP
 - **Title**  
-- **PIP Number**  (Auto-assigned).
+- **PIP Number**  (Auto-assigned)
 - **Proposer**  
 - **Submission Date**  
 - **Status** (`Draft`, `Last Call`, `Final`, `Rejected`, `Withdrawn`, `Stagnant`, `Living`)
-- **Category** (`Core`, `Application Interface`, `Token & Community Design`, `Process`, `Meta`, `Impact Indicators / Evaluation Design`, `Informational`)   
+- **Type** (`Core`, `Application Interface`, `Token & Community Design`, `Process`, `Meta`, `Impact Indicators / Evaluation Design`, `Informational`)   
 - **Motivation**  
 - **Specification / Details**  
-- **Contact** (Discord, GitHub, X , email, etc.)
+- **Contact** (Discord, GitHub, X, email, etc.)
 - **Notes (optional)**:  
   - The need for SBT-based evaluation  
   - Scope of impact and potential risks  
@@ -77,12 +76,14 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
   - Start date and duration of the Signal Vote (see section 7 for details):  
     - A Signal Vote may commence no earlier than 48 hours after the proposal has been published as a Draft.  
     - Unless otherwise stated, the default voting period is 72 hours (3 days).
-  - Last Call Deadline: `2025-06-10`.
+  - Last Call Deadline: `(e.g., 2025-08-17)`.
   - Requires (dependent PIP numbers, e.g., PIP-10, PIP-18)
 You may include any other relevant supplementary information.
 
 Editor: TBD (assigned during the review phase; responsible for ensuring compliance with the template and proper management of progress status)
 
+You can find the official proposal template.  
+[here](https://github.com/peace-coin/PIPs/blob/main/template***********.md)  
 
 ---
 
@@ -115,8 +116,7 @@ All PIPs must meet the following criteria to be formally submitted and registere
 
 #### 5.1 Template Compliance
 - The proposal must follow the designated format, with all required sections clearly stated.  
-- Accuracy and transparency of the content are essential.  
-- While proposals may be written in any language if properly formatted, a full English version must be included if a language other than English is used.
+- Accuracy and transparency of the content are essential. While proposals may be written in any language if properly formatted, a full English version must be included if a language other than English is used.
 
 #### 5.2 Eligibility of Proposers
 PEACE COIN governance emphasizes participation based on **contribution**, **trust**, and **empathy**, not solely on financial capital.
@@ -130,13 +130,24 @@ PEACE COIN governance emphasizes participation based on **contribution**, **trus
     - Contribution records (e.g., past proposals, reviews, implementations)  
     - Delegated endorsements or trust from other members  
 
-- Governance Weighting in the Initial Phase:
- - PCE staking: 1 point  
- - SBTs (Soulbound Tokens) based on contribution records: 1–5 points (categories assigned by core team or moderators)  
- - Voting influence will be determined by the total sum of these points  
+- **Governance Weighting in the Initial Phase**  
+- *PCE Staking*: 1 PCE = 1 voting power  
+- *Contributions via Tokens representing contributions (e.g., SBTs, NFTs, or similar mechanisms)*:  
+  The rank is assigned at the time of issuance by governance members, and voting power is granted as follows:  
+  - Rank 1: 25,000 voting power  
+  - Rank 2: 75,000 voting power  
+  - Rank 3: 150,000 voting power  
+  - Rank 4: 200,000 voting power  
+  - Rank 5: 300,000 voting power  
+- Total voting power is determined by the sum of PCE staking and contribution-token-based voting power.
+- PCE staking: 1 point
+- Tokens representing contributions (e.g., SBTs, NFTs, or similar mechanisms): 1–5 points (types assigned by core team or moderators)
+- Voting influence will be determined by the total sum of these points.
 
-> Informational PIPs and proposals in the Draft stage can be freely submitted by anyone. The current system assumes that all participants have equal access to open proposal opportunities, and it is designed to remain flexible in alignment with future system evolution.
 
+> Informational PIPs and proposals in the Draft stage can be freely submitted by anyone.  
+The current system assumes that all participants have equal access to open proposal opportunities, and it is designed to remain flexible in alignment with future system evolution.
+ 
 #### 5.3 Submission Platform
 All PIPs must be submitted to the official platform (e.g., GitHub or Discourse).  
 - Proposals must be posted publicly for community review.  
@@ -204,15 +215,15 @@ Draft proposals can proceed to a Formal Vote after visualizing initial support f
 This is the official voting phase conducted by the DAO.
 For a vote to be considered valid, the following two conditions must be met:
 - Quorum: the number of valid votes must exceed a certain percentage of all governance participants.
-- Approval Rate: the percentage of affirmative votes among valid votes must meet or exceed the threshold defined for each category.
+- Approval Rate: the percentage of affirmative votes among valid votes must meet or exceed the threshold defined for each type.
 
-| Category                             | Quorum         | Approval Rate    | Notes                                                                 |
+| Type                             | Quorum         | Approval Rate    | Notes                                                                 |
 |--------------------------------------|----------------|------------------|-----------------------------------------------------------------------|
 | **Core**                             | 20% or more    | 66% or more       | Core specifications; protocol and ARIGATO CREATION                   |
 | **Application Interface**            | 20% or more    | Majority          | Design for UI, API, and Dapp integration                             |
 | **Token & Community Design**         | 20% or more    | Majority          | Token structure and exchangeability restrictions                     |
 | **Process**                          | 20% or more    | Majority          | Proposal submission, voting design, delegation system                |
-| **Meta**                             | 20% or more    | 66% or more       | Rule-setting related to PIP categorization and structural changes    |
+| **Meta**                             | 20% or more    | 66% or more       | Rule-setting related to PIP type definitions and structural changes    |
 | **Impact Indicators / Evaluation Design** | 20% or more | Majority          | Metrics design, circulation simulations, empathy visualization, etc. |
 | **Informational**                    | 10% or more    | Majority          | Knowledge sharing, reports, and other non-governance-impacting content |
 
@@ -244,11 +255,11 @@ Implementation responsibilities are shared flexibly among proposers, developers,
 ---
 
 ### **9. Amendments & Meta-Governance**
-This section defines how the foundational rules of the PIP system itself—such as trust score design, voting mechanics, or process structure—can be revised. These are not ordinary proposals but meta-level updates that support the autonomous and evolving nature of PEACE COIN governance.
+This section defines how the foundational rules of the PIP system—such as the design of trust scores, voting mechanisms, and procedural structures—can be revised. These are not ordinary proposals but meta-level updates that underpin the autonomous and evolving nature of PEACE COIN governance.
 
-#### Main Topics Subject to Meta-Governance:
-- Changes to PIP categories, statuses, and lifecycle  
-- Redefinition of trust score or SBT guidelines  
+#### Key Areas Subject to Meta-Governance:
+- Changes to PIP types, statuses, and lifecycle  
+- Review and redesign of contribution scoring mechanisms using Contribution Tokens (e.g., SBTs, NFTs)  
 - Revision of quorum rules or vote weighting mechanisms  
 - Adjustments in DAO structure or distribution of decision-making authority  
 
@@ -257,7 +268,7 @@ This section defines how the foundational rules of the PIP system itself—such 
 - Review or endorsement by high-trust-score participants  
 - Gradual rollout with testing or impact evaluation when possible  
 
-This structure ensures that as PEACE COIN’s values and technologies evolve, the system can adapt in a self-governing manner.
+This mechanism ensures that even as PEACE COIN’s technologies evolve, the system can autonomously adapt and grow while preserving its integrity.
 
 
 ---
@@ -266,7 +277,7 @@ This structure ensures that as PEACE COIN’s values and technologies evolve, th
 PEACE COIN Improvement Proposals (PIPs) are intended as a public intellectual infrastructure that anyone can propose, reference, reuse, or implement freely. Accordingly, all PIP documents follow the policy below:
 
 #### Basic Policy
-PIPs are, by default, published under the **[Creative Commons CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)** license.  
+PIPs are, by default, published under the **[Creative Commons CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)** (Public Domain) license.  
 This allows anyone to copy, modify, distribute, and use the content freely without attribution or permission.
 
 #### License and Usage Rights
