@@ -3,8 +3,7 @@ pip: 11
 title: Soulbound Token (SBT) Issuance upon KYC Verification
 proposer:  @Tetz on GitHub
 status: Draft
-type: Standards Track PIP
-category: Token & Community Design
+type: Token & Community Design
 created: 2025-07-11
 requires: []
 replaces: []
