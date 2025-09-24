@@ -2,7 +2,7 @@
 pip: 1
 title: PEACE COIN Governance Framework
 proposer: AR (on GitHub)
-status: Draft
+status: Living
 type: Meta
 created: 2025-08-17
 requires: []
@@ -28,7 +28,7 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
 
 ### **2. Types of PIPs**
 
-#### 2.1 Standards Track PIP
+#### 2.1 Standards Track
 **Purpose**: Covers proposals related to the core mechanisms and specifications of PEACE COIN, including protocol, token design, and interfaces. These define or revise the rules related to the system’s fundamental operations and the structure of value circulation.
 
 - **Core**: Proposals related to the central protocol logic, including the ARIGATO CREATION algorithm for token increment/decrement, changes to its parameters, and the "r coefficient" (a variable for adjusting token value).  
@@ -38,11 +38,11 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
 - **Token & Community Design**: Proposals on the design of community tokens incorporating increment/decrement mechanisms, based on PCE (which itself has no such mechanisms), and proposals that define restrictions on their exchangeability to PCE (e.g., exchange ratios, conditions, and caps).
 *Example*: Initial coefficient definition, exchange limitation structures.
 
-**2.2 Process PIP**  
+**2.2 Process**  
 **Purpose**: Proposals related to the operational framework, including the decision-making processes, evaluation logic, and lifecycle of the PIP system and the DAO.  
 *Example*: Revising proposal submission conditions, Signal Vote design, adjusting quorum and voting periods for Formal Votes, delegation system updates.
 
-**2.3 Meta PIP**  
+**2.3 Meta**  
 **Purpose**: Proposals that modify or expand the structure of the PIP system itself. These address the foundational aspects of the framework, such as adding or removing types, defining lifecycle stages, and designing templates.  
 *Example*: Redefining PIP types, updating guidelines, standardizing document formats.
 
@@ -51,7 +51,7 @@ PIPs serve the following purposes as a proposal system that evolves both the tec
 - *Metrics Design (Examples of Indicators): Trust scores, redistribution and circulation rates, hidden emotional or contributory values, reaction scales based on empathy and sentiment.
 - *Community Insight Map (Examples of Visualizations): Simulations of value circulation, impact comparisons before and after the proposal, distribution patterns of empathy and trust across regions or communities, and visualizations of network structures.
 
-**2.5 Informational PIP**  
+**2.5 Informational**  
 **Purpose**: Covers content that does not directly modify the system or protocol but contributes to community learning and informed decision-making. This includes knowledge sharing, experimental proposals, conceptual hypotheses, and case studies.  
 *Example*: Prototype implementation reports, local DAO case studies, and sharing of algorithm evaluation tools.
 
@@ -83,7 +83,7 @@ You may include any other relevant supplementary information.
 Editor: TBD (assigned during the review phase; responsible for ensuring compliance with the template and proper management of progress status)
 
 You can find the official proposal template.  
-[here](https://github.com/peace-coin/PIPs/blob/main/template***********.md)  
+([here](https://github.com/peacecoin-protocol/PIPs/blob/main/PIPs/pip-templete.md))  
 
 ---
 
