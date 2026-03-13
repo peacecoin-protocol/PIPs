@@ -1,5 +1,5 @@
 ---
-pip: 2
+pip: 12
 title: Community Treasury Wallet and Capital Operations
 proposer: chiba (on GitHub)
 status: Draft
@@ -9,7 +9,7 @@ requires: []
 replaces: []
 ---
 
-## PIP-2: Community Treasury Wallet and Capital Operations
+## PIP-12: Community Treasury Wallet and Capital Operations
 
 ### Abstract
 
