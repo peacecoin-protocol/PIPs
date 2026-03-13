@@ -1,5 +1,5 @@
 ---
-pip: 3
+pip: 13
 title: Meta-Transaction Fee Auto-Swap to PCE
 proposer: chiba (on GitHub)
 status: Draft
@@ -9,7 +9,7 @@ requires: []
 replaces: []
 ---
 
-## PIP-3: Meta-Transaction Fee Auto-Swap to PCE
+## PIP-13: Meta-Transaction Fee Auto-Swap to PCE
 
 ### Abstract
 
@@ -204,6 +204,6 @@ All examples use `INITIAL_FACTOR = 10^18`.
 ### Notes
 
 - **Scope of impact**: Requires upgrades to both PCEToken and PCECommunityToken contracts
-- **Interaction with PIP-2**: If PIP-2 (Community Treasury Wallet) is implemented, fee swaps reduce the PCEToken contract's PCE balance but do not modify `depositedPCEToken` for the community. This is consistent with how regular `swapFromLocalToken` operates — `depositedPCEToken` tracks capital operations only, not swap activity.
+- **Interaction with PIP-12**: If PIP-12 (Community Treasury Wallet) is implemented, fee swaps reduce the PCEToken contract's PCE balance but do not modify `depositedPCEToken` for the community. This is consistent with how regular `swapFromLocalToken` operates — `depositedPCEToken` tracks capital operations only, not swap activity.
 - **Out of scope**: Relayer fee margin configuration (e.g., markup for profit) is not addressed. Native token conversion (PCE → MATIC/POL) for actual gas payment remains the relayer's responsibility.
 - **Dependencies**: None (builds on existing meta-transaction and swap infrastructure)
