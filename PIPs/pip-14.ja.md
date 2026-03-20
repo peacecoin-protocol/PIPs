@@ -1,7 +1,7 @@
 ---
 pip: 14
 title: Transfer Contract Ownership to Governance-Controlled Timelock
-proposer: CHIBA Masahiro (on GitHub)
+proposer: CHIBA Masahiro (@nihen)
 status: Draft
 type: Core
 created: 2026-03-20
