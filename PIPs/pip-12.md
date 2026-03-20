@@ -1,7 +1,7 @@
 ---
 pip: 12
 title: Community Treasury Wallet and Capital Operations
-proposer: chiba (on GitHub)
+proposer: CHIBA Masahiro (@nihen)
 status: Draft
 type: Core
 created: 2026-03-13
