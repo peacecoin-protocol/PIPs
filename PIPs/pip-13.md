@@ -1,7 +1,7 @@
 ---
 pip: 13
 title: Meta-Transaction Fee Auto-Swap to PCE
-proposer: chiba (on GitHub)
+proposer: CHIBA Masahiro (@nihen)
 status: Draft
 type: Core
 created: 2026-03-13
