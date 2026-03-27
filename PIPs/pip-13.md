@@ -204,6 +204,6 @@ All examples use `INITIAL_FACTOR = 10^18`.
 ### Notes
 
 - **Scope of impact**: Requires upgrades to both PCEToken and PCECommunityToken contracts
-- **Interaction with PIP-12**: If PIP-12 (Community Treasury Wallet) is implemented, fee swaps reduce the PCEToken contract's PCE balance but do not modify `depositedPCEToken` for the community. This is consistent with how regular `swapFromLocalToken` operates — `depositedPCEToken` tracks capital operations only, not swap activity.
-- **Out of scope**: Relayer fee margin configuration (e.g., markup for profit) is not addressed. Native token conversion (PCE → MATIC/POL) for actual gas payment remains the relayer's responsibility.
+- **Interaction with PIP-12**: If PIP-12 (Community Treasury Wallet and Capital Operations) is implemented, fee swaps reduce both the PCEToken contract's PCE balance and the community's `depositedPCEToken`. This is consistent with how regular `swapFromLocalToken` operates — both functions decrease `depositedPCEToken` when PCE leaves the contract.
+- **Out of scope**: Relayer fee margin configuration (e.g., markup for profit) is not addressed. Native token conversion (PCE → POL) for actual gas payment remains the relayer's responsibility.
 - **Dependencies**: None (builds on existing meta-transaction and swap infrastructure)
