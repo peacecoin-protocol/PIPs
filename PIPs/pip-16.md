@@ -92,25 +92,29 @@ Both events are emitted from PCEToken so the `communityToken` index identifies w
 Transfers PCE from the community owner directly to the PCEToken contract and adjusts the swap rate downward, increasing the per-token PCE value of every existing holder.
 
 1. Verify `localTokens[communityToken].isExists == true` and `OwnableUpgradeable(communityToken).owner() == msg.sender`.
-2. Transfer `pceAmount` of PCE from `msg.sender` to the PCEToken contract via the contract's internal `_transfer`. No prior `approve` is required because PCEToken is itself the PCE ERC20 contract and the caller is verified to be the community owner.
-3. Increase `depositedPCEToken` by `pceAmount`.
-4. Adjust `exchangeRate`: `newRate = oldRate * oldDeposited / (oldDeposited + pceAmount)`.
-5. No community tokens are minted.
-6. Emit `TokenValueIncreased(communityToken, pceAmount, oldRate, newRate)`.
+2. Update PCEToken's global demurrage factor (`updateFactorIfNeeded()`) so the contract's factor state stays consistent with other token-moving entrypoints (`transfer`, `transferFrom`, `swapFromLocalToken`, etc.).
+3. Transfer `pceAmount` of PCE from `msg.sender` to the PCEToken contract via the contract's internal `_transfer`. No prior `approve` is required because PCEToken is itself the PCE ERC20 contract and the caller is verified to be the community owner.
+4. Increase `depositedPCEToken` by `pceAmount`.
+5. Adjust `exchangeRate`:
+   - if `oldDeposited == 0`: keep `newRate = oldRate`. The proportional formula collapses to zero when reserves are fully drained, which would brick all subsequent swaps; preserving the prior rate lets a community recover from the drained state.
+   - otherwise: `newRate = oldRate * oldDeposited / (oldDeposited + pceAmount)`.
+6. No community tokens are minted.
+7. Emit `TokenValueIncreased(communityToken, pceAmount, oldRate, newRate)`.
 
 #### Token Split
 
 Adjusts the rebase factor to mint new community tokens and distributes them proportionally to all existing holders. PCE reserves are NOT withdrawn. The swap rate is adjusted upward to reflect the increased token supply, decreasing the per-token PCE value.
 
 1. Verify `localTokens[communityToken].isExists == true` and `OwnableUpgradeable(communityToken).owner() == msg.sender`. Verify the community token's current `totalSupply()` is greater than zero.
-2. `mintAmount` is specified in the display (post-rebase) unit of the community token.
-3. Compute `newRebaseFactor = oldRebaseFactor * (totalDisplaySupply + mintAmount) / totalDisplaySupply`. (`oldRebaseFactor` is treated as `INITIAL_FACTOR` when zero, so the first split on a never-split community works correctly.)
-4. Call `PCECommunityToken.applyRebase(newRebaseFactor)` on the community token to commit the new factor.
-5. All holders' display balances increase proportionally because the community token's `balanceOf` / `totalSupply` computation incorporates `rebaseFactor`.
-6. Adjust `exchangeRate`: `newRate = oldRate * newRebaseFactor / oldRebaseFactor`.
-7. `depositedPCEToken` is unchanged.
-8. No PCE moves.
-9. Emit `TokenSplit(communityToken, mintAmount, oldRate, newRate, oldRebaseFactor, newRebaseFactor)`.
+2. Update PCEToken's global demurrage factor (`updateFactorIfNeeded()`), as in Token Value Increase, to keep factor state consistent with other entrypoints.
+3. `mintAmount` is specified in the display (post-rebase) unit of the community token.
+4. Compute `newRebaseFactor = oldRebaseFactor * (totalDisplaySupply + mintAmount) / totalDisplaySupply`. (`oldRebaseFactor` is treated as `INITIAL_FACTOR` when zero, so the first split on a never-split community works correctly.)
+5. Call `PCECommunityToken.applyRebase(newRebaseFactor)` on the community token to commit the new factor.
+6. All holders' display balances increase proportionally because the community token's `balanceOf` / `totalSupply` computation incorporates `rebaseFactor`.
+7. Adjust `exchangeRate`: `newRate = oldRate * newRebaseFactor / oldRebaseFactor`.
+8. `depositedPCEToken` is unchanged.
+9. No PCE moves.
+10. Emit `TokenSplit(communityToken, mintAmount, oldRate, newRate, oldRebaseFactor, newRebaseFactor)`.
 
 The display balance computation incorporates the rebase factor: `displayBalance = rawBalance * INITIAL_FACTOR / getCurrentFactor() * rebaseFactor / INITIAL_FACTOR` (with `rebaseFactor` treated as `INITIAL_FACTOR` when zero, so existing tokens behave identically until a split happens).
 
@@ -212,6 +216,12 @@ All examples use `INITIAL_FACTOR = 10^18`.
 - A Governor proposal contains a single call: `pceToken.increaseTokenValue(communityToken, amount)`.
 - The call executes under the Timelock as `msg.sender`, which equals `OwnableUpgradeable(communityToken).owner()`, so authorisation passes.
 - Result: PCE leaves the Timelock (the community's on-chain treasury) and is added to the reserves; `exchangeRate` adjusts.
+
+**Case 7: Recovery after fully drained reserve**
+- Initial: `depositedPCEToken == 0` (reserves fully drained, e.g. via repeated `swapFromLocalToken` and `swapFeeFromLocalToken`); `exchangeRate == R` (positive).
+- Operation: community owner calls `pceToken.increaseTokenValue(communityToken, X)` with `X > 0`.
+- Result: `depositedPCEToken == X`; `exchangeRate == R` (unchanged, because the fallback branch keeps the prior rate when `oldDeposited == 0`).
+- Effect: Future swaps against the community token function correctly because the rate is non-zero.
 
 ### Security Considerations
 
