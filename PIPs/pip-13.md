@@ -77,7 +77,7 @@ No new storage variables are required. The existing swap rate parameters (`excha
 
 #### Events
 
-**PCECommunityToken — new event (replaces `MetaTransactionFeeCollected`):**
+**PCECommunityToken — new event (emitted alongside the existing `MetaTransactionFeeCollected`):**
 
 ```solidity
 event MetaTransactionFeeSwapped(
@@ -99,7 +99,7 @@ event FeeSwappedFromLocalToken(
 );
 ```
 
-The existing `MetaTransactionFeeCollected` event is no longer emitted.
+The existing `MetaTransactionFeeCollected(from, to, displayFee, rawFee)` event continues to be emitted on every fee collection. Its semantics — "the payer `from` was charged `displayFee` / `rawFee` community tokens for a meta-transaction relayed by `to`" — are unchanged: only the relayer's settlement asset has changed (PCE instead of community tokens), and that detail is surfaced via the new `MetaTransactionFeeSwapped` event.
 
 #### Fee Swap Algorithm
 
@@ -108,6 +108,8 @@ When `_collectFeeAsPCE(from, relayer, displayFee)` is called:
 1. Convert `displayFee` to raw amount: `rawFee = displayBalanceToRawBalance(displayFee)`
 2. Burn community tokens from `from`: `_burn(from, rawFee)`
 3. Call `PCEToken(pceAddress).swapFeeFromLocalToken(address(this), relayer, displayFee)`
+4. Emit `MetaTransactionFeeCollected(from, relayer, displayFee, rawFee)` (preserved for backward compatibility)
+5. Emit `MetaTransactionFeeSwapped(from, relayer, displayFee, pceAmount)`
 
 When `PCEToken.swapFeeFromLocalToken(fromToken, relayer, communityTokenDisplayAmount)` is called:
 
@@ -137,18 +139,18 @@ Daily swap limits exist to prevent rapid economic destabilization from large spe
 **Why burn-and-transfer instead of transfer-and-swap?**
 Burning community tokens in the fee payer's context and transferring PCE from the PCEToken contract mirrors the existing `swapFromLocalToken` mechanic. This maintains consistency in how community token supply and PCE reserves interact.
 
-**Why replace `MetaTransactionFeeCollected` with a new event?**
-The semantics of the fee collection have changed: the relayer now receives PCE, not community tokens. A new event with explicit `pceFee` field provides accurate information for indexers and avoids misinterpretation of legacy event data.
+**Why add `MetaTransactionFeeSwapped` instead of replacing `MetaTransactionFeeCollected`?**
+The fee-collection semantics that `MetaTransactionFeeCollected` describes — *the payer was charged `displayFee` / `rawFee` community tokens for a meta-transaction relayed by `to`* — are unchanged by this PIP. Existing indexers that consume the event to track fee burden per payer remain correct. The new `MetaTransactionFeeSwapped` event additionally surfaces the PCE amount the relayer received, which is information the original event cannot express. Emitting both events keeps existing indexers working while letting new consumers observe the PCE settlement explicitly.
 
 ### Backwards Compatibility
 
 **Breaking changes:**
 
 - **Relayer fee denomination**: Relayers now receive PCE instead of community tokens. Relayer software MUST be updated to expect PCE balance increases rather than community token balance increases.
-- **Event change**: `MetaTransactionFeeCollected` is replaced by `MetaTransactionFeeSwapped`. Off-chain indexers and analytics that consume this event MUST be updated.
 
 **Non-breaking:**
 
+- `MetaTransactionFeeCollected(from, to, displayFee, rawFee)` is still emitted on every meta-transaction fee collection, with the same signature and semantics (payer-side fee burden). Off-chain indexers consuming this event continue to work without changes. Indexers that additionally need the PCE amount paid to the relayer can subscribe to the new `MetaTransactionFeeSwapped` event.
 - `getMetaTransactionFee()` and `getMetaTransactionFeeWithBaseFee()` return values are unchanged (community token display units). Client-side fee estimation requires no changes.
 - User experience is unchanged — users still pay the same fee amount in community tokens.
 - No storage layout changes.
