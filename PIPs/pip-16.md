@@ -13,20 +13,20 @@ replaces: [12]
 
 ### Abstract
 
-This proposal supersedes PIP-12 with a simplified design. It introduces token value increase and token split operations on PCECommunityToken that adjust the swap rate (`exchangeRate`), gated by `onlyOwner`. The dedicated `RATE_MANAGER_ROLE` and `treasuryWallet` storage proposed in PIP-12 are removed; PCE reserves are pulled from `msg.sender` (i.e. the contract owner). Communities that want to govern these operations on Tally simply transfer ownership to a Governor + Timelock setup, which makes the Timelock both the operation authority and the on-chain treasury (this is the standard Tally Treasury pattern).
+This proposal supersedes PIP-12 with a simplified design. It introduces token value increase and token split operations on PCECommunityToken that adjust the swap rate (`exchangeRate`), gated by `onlyOwner`. The dedicated `RATE_MANAGER_ROLE` and `treasuryWallet` storage proposed in PIP-12 are removed; PCE reserves are pulled from the community owner. Communities that want to govern these operations through a DAO simply transfer ownership to a Governor + Timelock setup, which makes the Timelock both the operation authority and the on-chain treasury for the community.
 
 ### Motivation
 
-PIP-12 introduced a `RATE_MANAGER_ROLE` with a custom mapping-based role system and a separate `treasuryWallet` address, motivated by the assumption that operation authority and PCE custody could live at different addresses, and that owner authority needed to be split off. Subsequent design review revealed that:
+PIP-12 introduced a `RATE_MANAGER_ROLE` with a custom mapping-based role system and a separate `treasuryWallet` address, motivated by the assumption that operation authority and PCE custody could live at different addresses, and that the community owner authority needed to be split off. Subsequent design review revealed that:
 
-1. PCECommunityToken's `owner` is set to the community creator at `createToken` time (not the protocol owner). It is community-scoped from the start.
-2. Communities that govern these operations through Tally inevitably converge to `owner = Governor's Timelock = Tally Treasury = PCE custody`. In that pattern there is no benefit to splitting `owner` from `RATE_MANAGER` or to keeping a separate `treasuryWallet`.
+1. PCECommunityToken's community owner is set at `createToken` time (the address that created the community). It is community-scoped from the start and is unrelated to any protocol-level owner.
+2. Communities that govern these operations through a DAO inevitably converge to `community owner = Governor's Timelock = community treasury = PCE custody`. In that pattern there is no benefit to splitting the community owner from a separate `RATE_MANAGER` or to keeping a separate `treasuryWallet`.
 3. The split adds storage variables (`treasuryWallet`, `_roles`, `RATE_MANAGER_ROLE`), administrative functions (`initializeTreasury` / `setTreasuryWallet` / `grantRateManagerRole` / `revokeRateManagerRole` / `hasRole`), and bytecode to a contract that has been near the Polygon 32 KB limit (see commit `cc07abf`). The cost is real; the benefit was hypothetical.
 
 PIP-12 was cancelled on the Polygon Timelock before its implementation switch executed (cancellation tx: `0xe4ed89b0846ce643b29b528e1e2fbe247a51867235ba88cf1760fd944661e1fb` on 2026-04-26). This proposal redesigns the same economic mechanism in the simplest form that meets the actual requirement.
 
 This proposal enables:
-- Community operators (or, after `transferOwnership`, the community's Governor + Timelock) to add PCE reserves to increase token value
+- The community owner (or, after `transferOwnership`, the community's Governor + Timelock) to add PCE reserves to increase token value
 - The same authority to expand token supply via proportional distribution to all holders (token split)
 - Adjustment of the swap rate through reserve management and supply expansion
 
@@ -51,7 +51,7 @@ Both functions are gated by `onlyOwner`. No new role-management functions are in
 function addReserve(address communityToken, uint256 pceAmount) external;
 ```
 
-The caller (the PCECommunityToken contract) MUST forward `msg.sender` of the original `increaseTokenValue` call as the source of PCE via `transferFrom`. Implementations can pass this address as an additional parameter or have PCECommunityToken pull PCE from its caller and transfer it to PCEToken in a single internal step. The exact internal interface is left to the implementation provided that the externally observable behaviour matches this specification.
+`addReserve` MUST be called only by the registered PCECommunityToken contract. PCE is pulled from the community owner (the address returned by `OwnableUpgradeable(communityToken).owner()`) via the standing approval that the community owner has granted to the PCEToken contract.
 
 #### Storage
 
@@ -76,10 +76,10 @@ The PIP-12 events `TreasuryWalletSet`, `RateManagerRoleGranted`, and `RateManage
 
 #### Token Value Increase
 
-Transfers PCE from the caller (the contract owner) to the PCEToken contract and adjusts the swap rate downward, increasing the per-token PCE value of every existing holder.
+Transfers PCE from the community owner to the PCEToken contract and adjusts the swap rate downward, increasing the per-token PCE value of every existing holder.
 
-1. The caller (i.e. the owner of the PCECommunityToken) MUST have approved at least `pceAmount` of PCE to the PCEToken contract in advance.
-2. Transfer `pceAmount` of PCE from the caller to the PCEToken contract via `transferFrom`.
+1. The community owner MUST have approved at least `pceAmount` of PCE to the PCEToken contract in advance.
+2. Transfer `pceAmount` of PCE from the community owner to the PCEToken contract via the standing approval (the PCEToken contract pulls the PCE internally; no separate `transferFrom` call from the caller is required).
 3. Increase `depositedPCEToken` by `pceAmount`.
 4. Adjust `exchangeRate`: `newRate = oldRate * oldDeposited / (oldDeposited + pceAmount)`.
 5. No community tokens are minted.
@@ -103,7 +103,7 @@ The display balance computation incorporates the rebase factor: `displayBalance 
 
 | | Token Value Increase | Token Split |
 |---|---|---|
-| PCE flow | caller → PCEToken contract | none |
+| PCE flow | community owner → PCEToken contract | none |
 | `depositedPCEToken` | increased | unchanged |
 | `exchangeRate` | adjusted down (token value ↑) | adjusted up (token value ↓) |
 | Token supply | unchanged | increased (via rebase factor) |
@@ -114,17 +114,17 @@ The display balance computation incorporates the rebase factor: `displayBalance 
 
 Both operations are gated by `onlyOwner`. There is no separate role:
 
-- For self-managed communities, the `owner` is the community creator's EOA (the address that called `createToken`); they call these functions directly.
-- For governance-managed communities, the community deploys an OZ Governor + TimelockController and calls `transferOwnership(timelock)`. Tally renders the Timelock as the DAO Treasury; PCE held by the Timelock is what feeds `increaseTokenValue`. Proposals are batched: `approve(PCEToken, amount)` from the Timelock + `increaseTokenValue(amount)` in the same batch.
+- For self-managed communities, the community owner is the address that called `createToken` (typically an EOA or multisig); the community owner calls these functions directly.
+- For DAO-managed communities, the community deploys a Governor + TimelockController and calls `transferOwnership(timelock)`. The community's Timelock then becomes the operation authority and the on-chain treasury that holds PCE for `increaseTokenValue`. Proposals are batched: `approve(PCEToken, amount)` from the Timelock + `increaseTokenValue(amount)` in the same batch.
 - Migration between the two modes is performed via standard `transferOwnership`. No PIP-specific migration step is required.
 
 ### Rationale
 
 **Why `onlyOwner` instead of a dedicated role?**
-The `owner` of PCECommunityToken is already community-scoped (assigned at `createToken` to the creator). Communities that need governance simply set `owner` to a Governor's Timelock; communities that operate informally keep `owner` on a multisig or EOA. A separate `RATE_MANAGER_ROLE` is only beneficial if `owner` and the rate-changing authority are intended to live at different addresses, which has no concrete operational use case. Aligning all governable operations (`setTokenSettings`, `increaseTokenValue`, `splitToken`) under the same authority keeps the mental model and the Tally proposal flow coherent.
+The community owner of PCECommunityToken is already community-scoped (assigned at `createToken` to the creator). Communities that need governance simply set the community owner to a Governor's Timelock; communities that operate informally keep the community owner on a multisig or EOA. A separate `RATE_MANAGER_ROLE` is only beneficial if the community owner and the rate-changing authority are intended to live at different addresses, which has no concrete operational use case. Aligning all governable operations (`setTokenSettings`, `increaseTokenValue`, `splitToken`) under the same authority keeps the mental model and the DAO proposal flow coherent.
 
 **Why no `treasuryWallet`?**
-The PCE used for token value increases is held wherever the community's PCE custody lives. When governance is on Tally, that is the Timelock, which is also the caller of `increaseTokenValue`, so `msg.sender` is the correct and only address to pull PCE from. A separate `treasuryWallet` would only matter if the rate-changing authority and the PCE custodian were intentionally different addresses; in practice they are not. Removing the slot also removes the management surface (`initializeTreasury`, `setTreasuryWallet`).
+The PCE used for token value increases is held wherever the community's PCE custody lives. When the community owner is a DAO Timelock, that Timelock is also the caller of `increaseTokenValue`, so the community owner is the correct and only address to pull PCE from. A separate `treasuryWallet` would only matter if the rate-changing authority and the PCE custodian were intentionally different addresses; in practice they are not. Removing the slot also removes the management surface (`initializeTreasury`, `setTreasuryWallet`).
 
 **Why use a factor-based rebase rather than iterating holders?**
 Iterating all holders on-chain is gas-prohibitive and would require maintaining an enumerable holder set. A factor-based approach achieves O(1) gas regardless of holder count and is consistent with PCECommunityToken's existing demurrage factor pattern.
@@ -139,7 +139,7 @@ PCE withdrawal to a treasury would deplete the reserves backing the community to
 | | PIP-12 | PIP-16 (this) |
 |---|---|---|
 | Authority for value ops | dedicated `RATE_MANAGER_ROLE` | `onlyOwner` |
-| PCE source | `treasuryWallet` (separate slot) | `msg.sender` (i.e. owner) |
+| PCE source | `treasuryWallet` (separate slot) | community owner |
 | Storage added (`PCECommunityToken`) | `treasuryWallet`, `_roles`, `RATE_MANAGER_ROLE`, `rebaseFactor` | `rebaseFactor` only |
 | Admin functions added | `initializeTreasury`, `setTreasuryWallet`, `grantRateManagerRole`, `revokeRateManagerRole`, `hasRole` | none |
 | Events added | 5 | 2 |
@@ -150,7 +150,7 @@ PCE withdrawal to a treasury would deplete the reserves backing the community to
 
 All changes are additive: new functions, one new storage variable (`rebaseFactor`) appended to existing storage, two new events. Existing function signatures and behaviour are unchanged.
 
-PIP-12 was cancelled on the Polygon Timelock before its Beacon implementation switch executed, so its proposed storage layout (`treasuryWallet`, `_roles`) was never committed on Production or DEV. PIP-16 therefore starts from the current v15 storage layout with no conflicts.
+PIP-12 was cancelled on the Polygon Timelock before its Beacon implementation switch executed, so its proposed storage layout (`treasuryWallet`, `_roles`) was never committed on Production. PIP-16 therefore starts from the current production storage layout with no conflicts.
 
 `rebaseFactor` is treated as `INITIAL_FACTOR` (1e18) when zero, so PCECommunityTokens that have never been split continue to compute display balances identically to before the upgrade.
 
@@ -160,7 +160,7 @@ All examples use `INITIAL_FACTOR = 10^18`.
 
 **Case 1: Token value increase**
 - Initial: `depositedPCEToken = 100e18`, `exchangeRate = 1e18`
-- Owner has approved 50e18 PCE to PCEToken
+- Community owner has approved 50e18 PCE to PCEToken
 - Operation: `increaseTokenValue(50e18)`
 - Result: `depositedPCEToken = 150e18`, `exchangeRate = 1e18 * 100e18 / 150e18 ≈ 0.667e18`
 - Effect: Per-token PCE value of every holder increases.
@@ -181,27 +181,27 @@ All examples use `INITIAL_FACTOR = 10^18`.
 - Result: revert (`Ownable: caller is not the owner`)
 
 **Case 5: Insufficient approval**
-- Owner has approved 0 PCE to PCEToken
+- Community owner has approved 0 PCE to PCEToken
 - Operation: `increaseTokenValue(10e18)`
 - Result: revert (`ERC20InsufficientAllowance` from PCEToken)
 
-**Case 6: Governance flow (Tally)**
-- Owner of the PCECommunityToken is a Polygon TimelockController.
-- A Governor proposal batches: (a) `PCEToken.approve(communityToken, amount)` from the Timelock, (b) `communityToken.increaseTokenValue(amount)`.
-- Both calls execute as `msg.sender = Timelock`.
-- Result: PCE leaves the Timelock (Tally Treasury) and is added to the reserves; `exchangeRate` adjusts.
+**Case 6: DAO governance flow**
+- Community owner of the PCECommunityToken is a TimelockController.
+- A Governor proposal batches: (a) `PCEToken.approve(PCEToken, amount)` from the Timelock, (b) `communityToken.increaseTokenValue(amount)`.
+- Both calls execute under the Timelock as the community owner.
+- Result: PCE leaves the Timelock (the community's on-chain treasury) and is added to the reserves; `exchangeRate` adjusts.
 
 ### Security Considerations
 
-**Compromise of the owner.** A compromised owner can call `splitToken` repeatedly to dilute the per-token PCE value, or can drain its own approved PCE via `increaseTokenValue`. PCE never leaves the system as a result of `splitToken`, so the attack surface for value-extraction is bounded by the owner's own PCE balance and approval. Communities SHOULD use a multisig or DAO Governor + Timelock for the owner role. The governance model is out of scope for this proposal.
+**Compromise of the community owner.** A compromised community owner can call `splitToken` repeatedly to dilute the per-token PCE value, or can drain its own approved PCE via `increaseTokenValue`. PCE never leaves the system as a result of `splitToken`, so the attack surface for value-extraction is bounded by the community owner's own PCE balance and approval. Communities SHOULD use a multisig or DAO Governor + Timelock for the community owner role. The governance model is out of scope for this proposal.
 
 **Front-running.** A user MAY attempt to front-run a pending `splitToken` transaction with a `swapFromLocalToken` at the pre-split rate. Because no PCE leaves reserves on a split, the impact is limited to rate arbitrage. Mitigation strategies (commit-reveal, private mempools, etc.) are out of scope.
 
-**Reentrancy.** `increaseTokenValue` performs an external call (`transferFrom`). `splitToken` is purely internal (factor adjustment, no external calls). Implementations MUST either follow the checks-effects-interactions pattern or use a reentrancy guard for `increaseTokenValue`.
+**Reentrancy.** `increaseTokenValue` performs an external call (the internal pull from the community owner). `splitToken` is purely internal (factor adjustment, no external calls). Implementations MUST either follow the checks-effects-interactions pattern or use a reentrancy guard for `increaseTokenValue`.
 
 **Integer overflow / underflow.** Rate computations multiply before dividing. Implementations MUST use `Math.mulDiv` or equivalent safe-math primitives to prevent precision loss and overflow.
 
-**Approval grant requirement.** `increaseTokenValue` relies on a prior `approve` from the owner. In the Tally / Timelock flow this is provided by including the `approve` call in the same proposal batch as `increaseTokenValue`, which guarantees atomicity within the batch executor.
+**Approval grant requirement.** `increaseTokenValue` relies on a prior `approve` from the community owner. In the DAO / Timelock flow this is provided by including the `approve` call in the same proposal batch as `increaseTokenValue`, which guarantees atomicity within the batch executor.
 
 ### Notes
 
