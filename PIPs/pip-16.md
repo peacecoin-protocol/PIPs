@@ -51,7 +51,9 @@ Both functions are gated by `onlyOwner`. No new role-management functions are in
 function addReserve(address communityToken, uint256 pceAmount) external;
 ```
 
-`addReserve` MUST be called only by the registered PCECommunityToken contract. PCE is pulled from the community owner (the address returned by `OwnableUpgradeable(communityToken).owner()`) via the standing approval that the community owner has granted to the PCEToken contract.
+`addReserve` MUST be called only by the registered PCECommunityToken contract (enforced by `require(msg.sender == communityToken)` and `localTokens[communityToken].isExists`). PCE is pulled from the community owner (the address returned by `OwnableUpgradeable(communityToken).owner()`) via the standing approval that the community owner has granted to the PCEToken contract.
+
+**Note: `addReserve` is not a client-facing entrypoint.** It is an internal coordination function between the two contracts: PCECommunityToken's `increaseTokenValue` calls `addReserve` to atomically update `depositedPCEToken` accounting (which lives on PCEToken), pull PCE from the community owner (using PCEToken's own ERC20 internals), and adjust `exchangeRate`. Clients (community owners, multisigs, Timelocks, etc.) interact only with `PCECommunityToken.increaseTokenValue` and `PCECommunityToken.splitToken`. A direct call to `addReserve` from any address other than the registered PCECommunityToken contract reverts. This pattern follows the same convention as the existing `PCECommunityToken.mint` / `PCECommunityToken.recordSwapToPCE` functions, which are similarly gated to only accept calls from PCEToken.
 
 #### Storage
 
