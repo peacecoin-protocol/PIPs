@@ -80,7 +80,7 @@ The PIP-12 events `TreasuryWalletSet`, `RateManagerRoleGranted`, and `RateManage
 Transfers PCE from the community owner to the PCEToken contract and adjusts the swap rate downward, increasing the per-token PCE value of every existing holder.
 
 1. The community owner MUST have approved at least `pceAmount` of PCE to the PCEToken contract in advance.
-2. Transfer `pceAmount` of PCE from the community owner to the PCEToken contract via the standing approval (the PCEToken contract pulls the PCE internally; no separate `transferFrom` call from the caller is required).
+2. Transfer `pceAmount` of PCE from the community owner to the PCEToken contract via the standing approval.
 3. Increase `depositedPCEToken` by `pceAmount`.
 4. Adjust `exchangeRate`: `newRate = oldRate * oldDeposited / (oldDeposited + pceAmount)`.
 5. No community tokens are minted.
