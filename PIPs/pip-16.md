@@ -19,9 +19,8 @@ This proposal supersedes PIP-12 with a simplified design. It introduces token va
 
 PIP-12 introduced a `RATE_MANAGER_ROLE` with a custom mapping-based role system and a separate `treasuryWallet` address, motivated by the assumption that operation authority and PCE custody could live at different addresses, and that the community owner authority needed to be split off. Subsequent design review revealed that:
 
-1. PCECommunityToken's community owner is set at `createToken` time (the address that created the community). It is community-scoped from the start and is unrelated to any protocol-level owner.
-2. Communities that govern these operations through a DAO inevitably converge to `community owner = Governor's Timelock = community treasury = PCE custody`. In that pattern there is no benefit to splitting the community owner from a separate `RATE_MANAGER` or to keeping a separate `treasuryWallet`.
-3. The split adds storage variables (`treasuryWallet`, `_roles`, `RATE_MANAGER_ROLE`), administrative functions (`initializeTreasury` / `setTreasuryWallet` / `grantRateManagerRole` / `revokeRateManagerRole` / `hasRole`), and bytecode to a contract that has been near the Polygon 32 KB limit (see commit `cc07abf`). The cost is real; the benefit was hypothetical.
+1. Communities that govern these operations through a DAO inevitably converge to `community owner = Governor's Timelock = community treasury = PCE custody`. In that pattern there is no benefit to splitting the community owner from a separate `RATE_MANAGER` or to keeping a separate `treasuryWallet`.
+2. The split adds storage variables (`treasuryWallet`, `_roles`, `RATE_MANAGER_ROLE`), administrative functions (`initializeTreasury` / `setTreasuryWallet` / `grantRateManagerRole` / `revokeRateManagerRole` / `hasRole`), and bytecode to a contract that has been near the Polygon 32 KB limit (see commit `cc07abf`). The cost is real; the benefit was hypothetical.
 
 PIP-12 was cancelled on the Polygon Timelock before its implementation switch executed (cancellation tx: `0xe4ed89b0846ce643b29b528e1e2fbe247a51867235ba88cf1760fd944661e1fb` on 2026-04-26). This proposal redesigns the same economic mechanism in the simplest form that meets the actual requirement.
 
