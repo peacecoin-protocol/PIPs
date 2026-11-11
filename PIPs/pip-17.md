@@ -13,242 +13,188 @@ replaces: []
 
 ### Abstract
 
-This proposal fixes a long-standing accounting drift in inter-community community-token swaps. Today, when a user calls `PCECommunityToken.swapTokens(toToken, amount)` to swap directly from community A to community B, raw supply is intended to move (burn on A, mint on B) but the per-community PCE reserve accounting in `PCEToken.localTokens[*].depositedPCEToken` does **not** move — and in fact, the destination-side `mint` call cannot succeed at all under the current code because `PCECommunityToken.mint` is gated to the PCEToken address. This proposal introduces a single PCEToken function, `executeInterCommunitySwap`, that the source community token calls after the source-side burn. PCEToken performs the deposit migration (moving the PCE-equivalent of the swapped amount from the source community's accounting to the destination community's accounting) and performs the destination-side mint (which it is authorized to do). After this change, the direct A→B path is functional end-to-end and becomes accounting-equivalent to the existing indirect A→PCE→B path. The per-community reserve model is retained.
+This proposal fixes the per-community PCE reserve accounting of the direct community-to-community swap `PCECommunityToken.swapTokens(toToken, amount)`. Today the direct swap burns on the source and mints on the destination, but the per-community PCE reserves in `PCEToken.localTokens[*].depositedPCEToken` do not move; it also cannot complete, because the destination-side `mint` is called by the source community token while `PCECommunityToken.mint` accepts only `PCEToken`. This proposal routes the swap through a new `PCEToken.swapBetweenLocalTokens` function that moves the PCE reserve from the source community to the destination community and mints the destination token. After this change, the direct path works and is accounting-equivalent to the indirect path A → PCE → B. The direct swap does not consume the daily swap-to-PCE limits. To keep those limits effective, swaps to PCE from each community are also capped per day at `swapableToPCERate` of that community's reserve at the start of the UTC day. The per-community reserve model is retained.
 
 ### Motivation
 
-`PCEToken` tracks PCE reserves on a per-community basis via `localTokens[community].depositedPCEToken`. Three out of four reserve-affecting flows already maintain this accounting correctly:
+`PCEToken` tracks PCE reserves per community in `localTokens[community].depositedPCEToken`. The swaps to and from PCE keep this accounting correct:
 
-- `swapToLocalToken(B, amount)` (PCE → B): increments `localTokens[B].depositedPCEToken` by `amount`.
-- `swapFromLocalToken(A, amount)` (A → PCE): decrements `localTokens[A].depositedPCEToken` by the PCE-equivalent.
-- `swapFeeFromLocalToken(...)` (meta-tx fee path): decrements the source community's deposit by the PCE-equivalent fee.
+- `swapToLocalToken(B, amount)` (PCE → B) increases `localTokens[B].depositedPCEToken` by `amount`.
+- `swapFromLocalToken(A, amount)` (A → PCE) decreases `localTokens[A].depositedPCEToken` by the PCE equivalent and consumes A's daily swap-to-PCE limits.
+- `swapFeeFromLocalToken(...)` (meta-transaction fee) decreases the source community's reserve by the PCE equivalent of the fee.
 
-The fourth — direct community-to-community swap via `PCECommunityToken.swapTokens(toToken, amount)` — does not. It is intended to burn raw supply on the source and mint on the destination, but **never touches** `localTokens[fromToken].depositedPCEToken` or `localTokens[toToken].depositedPCEToken`. (It also has a latent bug whereby the destination-side `mint(sender, targetTokenAmount)` call cannot succeed, because `PCECommunityToken.mint` is gated to the PCEToken address; the mint call is made from the source community token rather than from PCEToken, so the auth check rejects it. PIP-17 closes this by routing the mint through PCEToken alongside the deposit migration.) Over time and across many inter-community swaps, this produces a deposit-vs-claim drift between communities:
+The direct swap `PCECommunityToken.swapTokens(toToken, amount)` does not. It burns on the source and mints on the destination, but neither `localTokens[A].depositedPCEToken` nor `localTokens[B].depositedPCEToken` changes. (It also has a latent bug: it calls `to.mint(sender, amount)` from the source community token, while `PCECommunityToken.mint` accepts only `PCEToken` as the caller, so the call reverts. This proposal fixes it as a side effect of routing the swap through `PCEToken`.) If direct swaps moved value without moving reserves, the reserves would drift from the claims:
 
-- Source community A: holders have already exited (raw supply burned), but PCE reserve accounting still attributes that PCE backing to A.
-- Destination community B: holders now hold the claim (raw supply minted), but PCE reserve accounting attributes no additional backing to B.
+- **Source community A:** its holders have exited, but A's reserve still counts the PCE that backed them.
+- **Destination community B:** its holders hold new claims, but B's reserve has no matching PCE.
 
 The two consequences are:
 
-1. **Per-community swap-back fairness breaks.** When a B holder later calls `swapFromLocalToken(B, ...)` to exit to PCE, the success/failure check (`localTokens[B].depositedPCEToken >= pcetokenAmount`) consults a deposit number that does not reflect the PCE that actually entered B (via inter-community swap). B can fail swap-back even though, in PCE-denominated terms across the protocol, B-attributable deposits should have been there.
-2. **Path equivalence breaks.** A user who needs to move from A's tokens to B's tokens has two paths today: indirect (`swapFromLocalToken(A) → swapToLocalToken(B)`) and direct (`swapTokens(B)`). The two paths produce **different** post-state accounting in `localTokens[*].depositedPCEToken`, even though they are economically intended to be equivalent. This is a footgun for governance, for off-chain accounting, and for any future logic that reads per-community deposit values.
-
-Note: this proposal scope is narrow. It does **not** restructure the per-community reserve model into a global pool (a separate alternative considered and explicitly rejected in favor of preserving per-community accounting). It does not address the orthogonal drifts described in the same design discussion: ARIGATO CREATION mints inflate community-token claims without inflating deposits, and PCE BASE Token decay erodes claims without changing deposits. Those remain per-community properties of the existing reserve model and are out of scope here.
+1. **Swap-back fairness breaks.** When a B holder later calls `swapFromLocalToken(B, ...)`, the check `localTokens[B].depositedPCEToken >= pceAmount` reads a reserve that does not include the PCE that entered B through direct swaps. The swap-back can fail even though the PCE is in the protocol.
+2. **Path equivalence breaks.** The direct path and the indirect path A → PCE → B are meant to be economically equivalent, but they would leave different `localTokens[*].depositedPCEToken` values.
 
 ### Specification
 
-#### Interface
+The key words "MUST", "MUST NOT", "SHOULD" and "MAY" are to be interpreted as described in RFC 2119.
 
-A new function is added to **PCEToken**:
+#### Interface — PCEToken (new)
 
 ```solidity
-function executeInterCommunitySwap(
-    address fromToken,
+/// Callable only by a registered community token (the source of the swap).
+function swapBetweenLocalTokens(
     address toToken,
-    address recipient,
-    uint256 fromDisplayAmount,
-    uint256 toDisplayAmount
-) external returns (uint256 movedPceAmount);
+    address account,
+    uint256 amountToSwap
+) external returns (uint256 targetTokenAmount);
+
+event TokensSwappedBetweenLocalTokens(
+    address indexed account,
+    address indexed fromToken,
+    address indexed toToken,
+    uint256 fromTokenAmount,
+    uint256 pceTokenAmount,
+    uint256 targetTokenAmount
+);
+
+/// Today's cap on PCE leaving `communityToken`'s reserve through swaps to PCE, and the PCE already counted.
+function getDailyPCEOutflow(address communityToken) external view returns (uint256 limit, uint256 used);
+
+/// PCE that can still leave `communityToken`'s reserve today through swaps to PCE.
+function getRemainingDailyPCEOutflow(address communityToken) external view returns (uint256);
+
+/// The cap and the remaining amount in `communityToken` display units (rounded down).
+function getDailyPCEOutflowInToken(address communityToken) external view returns (uint256 limit, uint256 remaining);
 ```
 
-**Authorization:** the caller MUST be the source community token: `require(msg.sender == fromToken, "Caller must be the from-side community token")`. Both `fromToken` and `toToken` MUST be registered (`localTokens[*].isExists`). `fromToken != toToken` MUST hold.
+#### Interface — PCECommunityToken
 
-**Behavior:** the function (a) computes the PCE-equivalent of `fromDisplayAmount` using the source community's exchange rate and current factor and migrates that amount of deposit from `localTokens[fromToken]` to `localTokens[toToken]`, then (b) calls `PCECommunityToken(toToken).mint(recipient, toDisplayAmount)`. The destination-side `mint` is performed by PCEToken (rather than by the source community token) because `PCECommunityToken.mint` is gated to the PCEToken address. If the source's recorded deposit is insufficient to cover the PCE-equivalent, the call MUST revert.
+The public signature of `swapTokens(address toTokenAddress, uint256 amountToSwap)` is unchanged. Its body is moved into an internal `_swapTokens(address sender, address toTokenAddress, uint256 amountToSwap)`, which PIP-22's signed swap also uses.
 
-**PCECommunityToken.swapTokens — modified behavior:** the source community token still performs the source-side burn and the swap-amount calculation. The destination-side mint is now delegated to PCEToken via `pceToken.executeInterCommunitySwap(address(this), toTokenAddress, sender, amountToSwap, targetTokenAmount)`. The public ABI of `swapTokens` is unchanged.
+#### Algorithm — `PCECommunityToken._swapTokens(sender, toToken, amount)`
+
+1. Require `toToken != address(this)` (`"Cannot swap to same token"`).
+2. Update the factors of this token and of `toToken`.
+3. Require `balanceOf(sender) >= amount` (`"Insufficient balance"`), `isAllowOutgoExchange(toToken)` (`"Outgo exchange not allowed"`) and `toToken.isAllowIncomeExchange(address(this))` (`"Income exchange not allowed"`).
+4. Burn `amount` (display units) from `sender`.
+5. Call `PCEToken.swapBetweenLocalTokens(toToken, sender, amount)`.
+
+The direct swap MUST NOT check or consume the daily swap-to-PCE limits (`getRemainingSwapableToPCEBalance`, `getRemainingSwapableToPCEBalanceForIndividual`).
+
+#### Algorithm — `PCEToken.swapBetweenLocalTokens(toToken, account, amount)`
+
+Let `fromToken = msg.sender`.
+
+1. Require `localTokens[fromToken].isExists` (`"Caller must be a community token"`) and `localTokens[toToken].isExists` (`"Target token not found"`).
+2. Update `PCEToken`'s factor and the factor of `toToken`.
+3. Compute the PCE equivalent with the same formula as `swapFromLocalToken`:
+
+   ```
+   pceAmount = mulDiv(
+       mulDiv(amount, INITIAL_FACTOR, localTokens[fromToken].exchangeRate),
+       lastModifiedFactor,
+       PCECommunityToken(fromToken).getCurrentFactor()
+   )
+   ```
+
+   Require `pceAmount > 0` (`"Target token deposit low"`) and `localTokens[fromToken].depositedPCEToken >= pceAmount` (`"Insufficient deposited PCE token reserve"`).
+4. Compute the destination amount with the same formula as `swapToLocalToken`:
+
+   ```
+   targetTokenAmount = mulDiv(
+       mulDiv(pceAmount, localTokens[toToken].exchangeRate, INITIAL_FACTOR),
+       PCECommunityToken(toToken).getCurrentFactor(),
+       lastModifiedFactor
+   )
+   ```
+
+   Require `targetTokenAmount > 0` (`"Invalid amount to swap"`).
+5. Decrease `localTokens[fromToken].depositedPCEToken` and increase `localTokens[toToken].depositedPCEToken` by `pceAmount`.
+6. Call `PCECommunityToken(toToken).mint(account, targetTokenAmount)`.
+7. Emit `TokensSwappedBetweenLocalTokens(account, fromToken, toToken, amount, pceAmount, targetTokenAmount)` and return `targetTokenAmount`.
+
+All arithmetic MUST use `Math.mulDiv`.
+
+#### Daily PCE outflow cap
+
+Because direct swaps do not consume the daily swap-to-PCE limits, a holder could otherwise move a community's reserve into a community they own and widen that community's supply-based limits (see Rationale). To prevent this, `PCEToken` caps swaps to PCE per community, in PCE units:
+
+1. For each community token `c`, `PCEToken` records `midnightDeposited[c]`, `outflowToday[c]` and `day[c]` (the UTC day number, `timestamp / 1 days`).
+2. Before every change to `localTokens[c].depositedPCEToken` — in `createToken`, `swapToLocalToken`, `swapFromLocalToken`, `swapBetweenLocalTokens` (both tokens), `swapFeeFromLocalToken` and `increaseTokenValue` — if `day[c]` is not today, set `midnightDeposited[c] = localTokens[c].depositedPCEToken`, `outflowToday[c] = 0` and `day[c]` to today. The first change of a day therefore records the reserve as it was at the start of the day.
+3. In `swapFromLocalToken` (including the signed swap to PCE), require `outflowToday[c] + pceAmount <= midnightDeposited[c] * swapableToPCERate / 10000` (`"Exceeds daily PCE outflow limit"`) and add `pceAmount` to `outflowToday[c]`.
+4. `PCECommunityToken.getTodaySwapableToPCEBalance()` and `getRemainingSwapableToPCEBalance()` return the smaller of their supply-based values and the cap and remaining amount from `PCEToken.getDailyPCEOutflowInToken(address(this))`. `swapFromLocalToken` already checks this value, so the cap usually reverts there with `"Exceeds daily swap limit"`; step 3 is the check in PCE units.
+
+Relayer fees (`swapFeeFromLocalToken`) and direct swaps are not counted in `outflowToday`. The existing supply-based community and individual limits are unchanged; the effective community limit is the smaller of the two.
 
 #### Storage
 
-No new storage. Existing slots used:
+`PCEToken` appends one mapping, `mapping(address communityToken => DailyOutflow) _dailyOutflows`. `DailyOutflow` is packed into one slot: `uint112 midnightDeposited`, `uint112 outflowToday`, `uint32 day`. A reserve above `type(uint112).max` (about 5.2 × 10^15 PCE) is recorded as that maximum. No existing slot changes.
 
-- `PCEToken.localTokens[fromToken].depositedPCEToken` (decremented)
-- `PCEToken.localTokens[toToken].depositedPCEToken` (incremented)
-- `PCEToken.localTokens[fromToken].exchangeRate` (read)
-- `PCEToken.lastModifiedFactor` (read; updated by the `updateFactorIfNeeded()` call performed at the start of the function)
-- The destination community's `_balances` / `_totalSupply` (mutated by the embedded `mint` call)
+#### Versions
 
-#### Events
-
-```solidity
-event DepositTransferredOnInterCommunitySwap(
-    address indexed fromToken,
-    address indexed toToken,
-    uint256 fromDisplayAmount,
-    uint256 movedPceAmount
-);
-```
-
-Emitted by PCEToken on every successful call to `executeInterCommunitySwap`, including the zero-`movedPceAmount` no-op short-circuit case described below.
-
-#### Algorithm
-
-The PCE-equivalent of `fromDisplayAmount` (display amount being swapped out of `fromToken`) is computed using the same formula already used by `swapFromLocalToken` (`PCEToken.sol:288-292`) and `swapFeeFromLocalToken` (`PCEToken.sol:333-337`):
-
-```
-movedPceAmount = mulDiv(
-    mulDiv(fromDisplayAmount, INITIAL_FACTOR, localTokens[fromToken].exchangeRate),
-    lastModifiedFactor,
-    PCECommunityToken(fromToken).getCurrentFactor()
-)
-```
-
-This is the same PCE quantity that would result from the indirect path `swapFromLocalToken(fromToken, fromDisplayAmount)`. Therefore, after this PIP, the direct A→B path produces the same `localTokens[A].depositedPCEToken` decrement and `localTokens[B].depositedPCEToken` increment as the indirect A→PCE→B path.
-
-**Steps in `executeInterCommunitySwap`:**
-
-1. Verify `msg.sender == fromToken` (MUST).
-2. Verify `localTokens[fromToken].isExists` and `localTokens[toToken].isExists` (MUST).
-3. Verify `fromToken != toToken` (MUST).
-4. Call `updateFactorIfNeeded()` so `lastModifiedFactor` reflects the current epoch.
-5. Compute `movedPceAmount` using the formula above.
-6. If `movedPceAmount > 0`: verify `localTokens[fromToken].depositedPCEToken >= movedPceAmount`, otherwise revert with `"Insufficient deposited PCE token reserve at source community"` (MUST). Then decrement `localTokens[fromToken].depositedPCEToken` and increment `localTokens[toToken].depositedPCEToken` by `movedPceAmount`. (When `movedPceAmount == 0`, no deposit accounting changes are made; this short-circuit mirrors `swapFeeFromLocalToken`'s zero-amount handling and prevents bricking on dust-sized swaps.)
-7. Call `PCECommunityToken(toToken).mint(recipient, toDisplayAmount)`. The mint succeeds because PCEToken is the authorized caller for `PCECommunityToken.mint`.
-8. Emit `DepositTransferredOnInterCommunitySwap(fromToken, toToken, fromDisplayAmount, movedPceAmount)`.
-9. Return `movedPceAmount`.
-
-**Modified `PCECommunityToken.swapTokens`:**
-
-```solidity
-function swapTokens(address toTokenAddress, uint256 amountToSwap) public {
-    address sender = _msgSender();
-    updateFactorIfNeeded();
-    PCEToken pceToken = PCEToken(pceAddress);
-    pceToken.updateFactorIfNeeded();
-    PCECommunityToken to = PCECommunityToken(toTokenAddress);
-    to.updateFactorIfNeeded();
-
-    require(balanceOf(sender) >= amountToSwap, "Insufficient balance");
-    require(isAllowOutgoExchange(toTokenAddress), "Outgo exchange not allowed");
-    require(to.isAllowIncomeExchange(address(this)), "Income exchange not allowed");
-
-    uint256 targetTokenAmount = TokenValueOps.computeSwapAmount(
-        pceAddress, address(this), toTokenAddress, amountToSwap, getCurrentFactor(), to.getCurrentFactor()
-    );
-    super._burn(sender, displayBalanceToRawBalance(amountToSwap));
-
-    // PIP-17: PCEToken handles deposit migration AND the destination-side mint
-    // (which is gated to PCEToken). This both fixes the latent inability of
-    // pre-PIP-17 swapTokens to mint on the destination community, and ensures
-    // per-community deposit accounting tracks the actual claim transferred.
-    pceToken.executeInterCommunitySwap(
-        address(this), toTokenAddress, sender, amountToSwap, targetTokenAmount
-    );
-}
-```
-
-The previous `to.mint(sender, targetTokenAmount)` call is removed and replaced by the `executeInterCommunitySwap` call which performs both the mint and the deposit migration atomically.
-
-#### Authority
-
-`executeInterCommunitySwap` follows the same pattern as `swapFeeFromLocalToken`: it is callable only by the registered community token instance that the call concerns (`msg.sender == fromToken`). No governance role and no community-owner role are involved. The function cannot be invoked by EOAs, generic multisigs, or any contract other than the source community token.
-
-There is no per-community opt-out: any direct inter-community swap initiated through `PCECommunityToken.swapTokens` performs the deposit migration. This is intentional — silent opt-outs would re-introduce the path-divergence between direct and indirect swaps that this PIP is designed to remove.
+`PCEToken.version()` becomes `1.0.18` and `PCECommunityToken.version()` becomes `1.0.20` (released together with PIP-22).
 
 ### Rationale
 
-**Why a community-pool model rather than a global pool?**
-A separate proposal considered consolidating per-community deposit accounting into a single global pool, removing the per-community check from `swapFromLocalToken` and routing all swap-back validation against `balanceOf(address(this))`. After review, the protocol elected to retain per-community accounting because it preserves three properties that the global-pool design would have lost: (a) inter-community cross-subsidy is bounded — community A's deposit cannot silently pay for community B's swap-back; (b) governance reasoning at the per-community level remains tractable — a community's deposit number means what it appears to mean; (c) per-community swap-back failure surfaces under-collateralization at the right unit of attribution. PIP-17 is the minimal change that fixes the specific drift caused by direct A→B swaps **without** discarding the per-community model.
+**Why route the swap through `PCEToken`?** `localTokens` belongs to `PCEToken`, and `PCECommunityToken.mint` accepts only `PCEToken`. Calling a `PCEToken` function that only registered community tokens may call is the existing pattern (`swapFeeFromLocalToken`). It avoids widening the `mint` permission to every community token.
 
-**Why a new function on PCEToken rather than direct storage manipulation from PCECommunityToken?**
-`localTokens` is PCEToken's internal accounting state. The existing pattern for community tokens that need PCEToken to mutate this state is to call a PCEToken function gated to `msg.sender == fromToken` (see `swapFeeFromLocalToken`, `PCEToken.sol:321`). PIP-17 follows the same pattern. Direct cross-contract storage writes are not a feature of the existing architecture and would require either making `localTokens` writable by community tokens or duplicating the registry — both worse than reusing the established pattern.
+**Why reuse the `swapFromLocalToken` and `swapToLocalToken` formulas?** So that the direct swap gives the same destination amount and the same reserve changes as the indirect path. On a Polygon mainnet fork with the upgrade applied, swapping 3 tokens of one production community to another moved 2.6109 PCE of reserve and produced 3312.7299 destination tokens; swapping the same 2.6109 PCE through `swapToLocalToken` produced the same 3312.7299 tokens.
 
-**Why move the full PCE-equivalent of the swap rather than a proportional share of the source deposit?**
-A proportional design (`movedPceAmount = sourceDeposit * rawShareLeaving / sourceTotalRawSupply`) was considered. It has the property that under-collateralized source communities can still complete inter-community swaps without revert. It was rejected because (a) it would silently understate the destination community's required reserve attribution — the destination acquires holders with full PCE-denominated claims, and partial deposit migration would push the under-collateralization onto the destination invisibly; (b) it would diverge from `swapFromLocalToken`'s strict "deposit must cover claim" semantics, breaking the path equivalence that PIP-17 is trying to establish; (c) revert on under-collateralized source is the correct surfacing behavior — it matches what would happen if the user used the indirect path `swapFromLocalToken → swapToLocalToken`.
+**Why do the daily swap-to-PCE limits not apply?** The limits throttle swaps to PCE. A direct swap does not pay out PCE: the reserve moves from A to B and stays in the protocol. When a B holder later swaps to PCE, B's limits apply. Applying A's limits to the direct swap would not reduce the PCE that leaves the protocol.
 
-**Why bundle the destination-side mint into PCEToken's new function rather than keep it in PCECommunityToken?**
-`PCECommunityToken.mint` is gated to `_msgSender() == pceAddress`, so it can only be invoked from PCEToken. Pre-PIP-17 code attempted `to.mint(sender, targetTokenAmount)` directly from the source community token, which would fail the auth check at runtime — making `swapTokens` non-functional. PIP-17 routes the mint through `executeInterCommunitySwap` so PCEToken (the authorized caller) performs it. This both fixes the latent bug and avoids widening `PCECommunityToken.mint`'s authorization to all registered community tokens, which would expand the trust surface unnecessarily.
+**Why cap swaps to PCE by the reserve at the start of the day?** The daily limits exist to slow the rate at which PCE leaves the protocol; protecting a community's holders is the job of the exchange allow lists. The existing community limit is a share of the community token's supply, which the community owner can raise without adding PCE: with ARIGATO CREATION settings at their maximum, repeated transfers can multiply the supply about 7.5 times a day, and `splitToken` multiplies the display supply while today's used amount stays in display units. That is harmless while a community holds only its owner's own PCE. With direct swaps outside the limits, however, anyone can create a community C, move a holder's share of another community's reserve into C on the same day, inflate C, and take that PCE out in a few days instead of at 3% a day. Capping by the reserve closes this: inflating the supply does not raise the cap, splitting the PCE among several communities does not raise the total, and PCE that enters a community today does not count until the next day. On the production communities at the time of writing, the reserve-based cap is equal to or larger than the supply-based limit for every community, so the effective limits do not change.
 
-**Why call `executeInterCommunitySwap` after the source-side burn rather than before?**
-Order does not affect the computed `movedPceAmount` (the formula depends on `fromDisplayAmount` and the source community's `exchangeRate` / `getCurrentFactor()`, none of which are changed by burn). Calling after burn keeps the `swapTokens` body's source-side operations grouped, with the destination-side operations (deposit migration + mint) delegated together to PCEToken. If the call reverts (insufficient source deposit, unregistered destination, etc.), the entire transaction reverts including the burn, leaving the user's source-token balance unchanged. This is the desired atomicity.
+**Why not apply the source community's limits to the direct swap instead?** That also closes the path, but it treats a swap that pays out no PCE as an exit to PCE. The cap keeps direct swaps free and limits only what actually leaves the protocol.
 
-**Why no new daily-limit accounting on inter-community swap?**
-Inter-community swaps currently do not consume `swappedToPCEToday` (the per-community daily swap-to-PCE limit), and PIP-17 does not change that. The daily limit was designed to throttle PCE outflow from the protocol, not internal claim transfers between communities. Making inter-community swap consume the limit would be a separable scope decision; see *Notes*.
+**Why revert on a zero PCE equivalent instead of skipping?** A swap whose PCE equivalent rounds to zero would burn the user's tokens and either mint nothing or mint without moving reserves. Reverting is the same behavior as `swapFromLocalToken`.
 
-**Why no per-community opt-out?**
-A per-community flag to disable deposit migration would re-introduce the very drift this PIP fixes, in a configuration-dependent way. The migration is mandatory.
+**Why move the full PCE equivalent instead of a proportional share of the source reserve?** The destination holders receive full claims. Moving less would hide the source's under-collateralization in the destination. Reverting when the source reserve is short matches `swapFromLocalToken`.
+
+**Why keep per-community reserves?** A single global pool was considered and rejected. Per-community reserves keep one community's reserve from paying for another community's exits, and keep each community's reserve number meaningful.
 
 ### Backwards Compatibility
 
-PCEToken changes are purely additive: one new external function (`executeInterCommunitySwap`), one new event (`DepositTransferredOnInterCommunitySwap`). No existing function signature changes. No storage layout changes (only existing slots are mutated).
-
-PCECommunityToken changes are minimal at the public surface: `swapTokens`'s public signature, parameters, and visibility are unchanged. Internally, the destination-side `to.mint(sender, targetTokenAmount)` call is removed and replaced by the `pceToken.executeInterCommunitySwap(...)` call which performs both the mint and the deposit migration. No new storage.
-
-No changes to `swapFromLocalToken`, `swapToLocalToken`, `swapFeeFromLocalToken`, ARIGATO CREATION mint logic, decay logic, or any view function.
-
-`getDepositedPCETokens(community)` continues to return `localTokens[community].depositedPCEToken`. After PIP-17, the returned value reflects the corrected accounting (i.e., includes the effect of inter-community swaps). Off-chain readers that depend on this view will observe more accurate per-community deposits going forward. There is no migration of pre-PIP-17 historical drift: the existing on-chain state is taken as the new starting point, and accounting drifts only through future inter-community swaps.
-
-The existing indirect path (`swapFromLocalToken` → `swapToLocalToken`) continues to work exactly as before. Its post-state on `localTokens[*].depositedPCEToken` was already correct; PIP-17 makes the direct path produce the same post-state.
-
-Existing scripts, multisig batches, and governance proposals that invoke `swapTokens` continue to use the same external signature. Since pre-PIP-17 `swapTokens` was non-functional in practice (the destination-side mint reverted on auth), no integrations could have been relying on it for state mutation; PIP-17 makes the function functional. After PIP-17, inter-community swap from a source community whose `depositedPCEToken` is below the PCE-equivalent of the swap amount will revert.
+- `swapTokens` keeps its signature. It was not usable before (the destination mint reverted), so no integration can depend on its old behavior.
+- `PCEToken` gains four external functions and one event.
+- `PCEToken` appends one mapping. No existing slot changes.
+- Swaps to PCE can now also revert because of the reserve-based cap. `getTodaySwapableToPCEBalance()` and `getRemainingSwapableToPCEBalance()` include the cap, so clients that size swaps with them are not affected.
+- For each community, the cap starts from the reserve at the first reserve change after the upgrade.
+- The direct swap reverts when the source reserve does not cover the swap. It does not check or consume the daily swap-to-PCE limits.
+- Reserve drift from before the upgrade is not corrected. The on-chain state at the upgrade is the new baseline.
 
 ### Test Cases
 
-In all cases, INITIAL_FACTOR = 10^18, exchange rates and current factors are 1e18 unless noted, and BP_BASE = 10,000.
+Unless noted, exchange rates and factors are `1e18` and the daily limits are high enough not to bind. Cases 1–13 are covered by `test/SwapTokens.t.sol` and case 14 by `test/BytesSignatureAuthorization.t.sol` in `peacecoin-protocol/core` at `v20`. The amounts in case 1 are illustrative.
 
-**Case 1: Standard inter-community swap.**
-- Setup: communities A and B, both registered. `localTokens[A].depositedPCEToken = 100e18`, `localTokens[B].depositedPCEToken = 50e18`. `A.exchangeRate = 1e18`, both current factors = 1e18, `pceToken.lastModifiedFactor = 1e18`. User holds 30 display units of A.
-- Operation: user calls `A.swapTokens(B, 30e18)`.
-- Result: A burns 30e18 raw, B mints `targetTokenAmount` raw to user. PCEToken: `localTokens[A].depositedPCEToken = 70e18`, `localTokens[B].depositedPCEToken = 80e18`. Event `DepositTransferredOnInterCommunitySwap(A, B, 30e18, 30e18)` is emitted.
-
-**Case 2: Direct path matches indirect path.**
-- Setup: identical to Case 1.
-- Operation 2a (indirect): user calls `pceToken.swapFromLocalToken(A, 30e18)` then `pceToken.swapToLocalToken(B, 30e18)`.
-- Operation 2b (direct): from the same starting state, user calls `A.swapTokens(B, 30e18)`.
-- Result: post-state `localTokens[A].depositedPCEToken` and `localTokens[B].depositedPCEToken` are equal across the two operations. (This was not true before PIP-17.)
-
-**Case 3: Insufficient source deposit reverts.**
-- Setup: `localTokens[A].depositedPCEToken = 5e18`, otherwise as Case 1. User holds 30 display units of A (e.g. via ARIGATO CREATION accumulation that inflated supply beyond deposit).
-- Operation: user calls `A.swapTokens(B, 30e18)`.
-- Result: revert (`"Insufficient deposited PCE token reserve at source community"`). User's A balance and B's supply unchanged. The same operation via `swapFromLocalToken(A, 30e18)` would also revert with `"Insufficient deposited PCE token reserve"` — behavior is aligned across the two paths.
-
-**Case 4: Authorization.**
-- An EOA, a generic contract, or any community token other than A calls `pceToken.executeInterCommunitySwap(A, B, recipient, 10e18, 10e18)`.
-- Result: revert (`"Caller must be the from-side community token"`).
-
-**Case 5: Same-token guard.**
-- A calls `pceToken.executeInterCommunitySwap(A, A, recipient, 10e18, 10e18)` (e.g. via a misuse of `swapTokens`).
-- Result: revert (`"Same-token swap"`). (Note: `PCECommunityToken.swapTokens` would already revert earlier in such a case via existing logic; this is a defense-in-depth check at the PCEToken layer.)
-
-**Case 6: Unregistered destination.**
-- B is not registered (`localTokens[B].isExists == false`). User calls `A.swapTokens(B, 30e18)`.
-- Result: revert at the first registration check inside `executeInterCommunitySwap` (`"To token not registered"`). The pre-existing `to.isAllowIncomeExchange(...)` call inside `swapTokens` would in practice fail earlier when `B` is not a deployed PCECommunityToken; this is a defense-in-depth check at the PCEToken layer.
-
-**Case 7: Dust swap (zero PCE-equivalent).**
-- Setup: `A.exchangeRate` is large enough that `mulDiv(1, INITIAL_FACTOR, A.exchangeRate)` rounds to 0.
-- Operation: user calls `A.swapTokens(B, 1)`. `executeInterCommunitySwap` computes `movedPceAmount == 0`, so deposit accounting is unchanged; the destination-side `mint` still proceeds with the (similarly small) `toDisplayAmount`.
-- Result: deposit storage unchanged. Event `DepositTransferredOnInterCommunitySwap(A, B, 1, 0)` emitted. The outer `swapTokens`'s `targetTokenAmount > 0` check (inherited from `TokenValueOps.computeSwapAmount`) typically prevents this case from occurring at the swap layer; the zero-handling in `executeInterCommunitySwap` is defensive.
-
-**Case 8: Multiple inter-community swaps preserve protocol-wide deposit total.**
-- Setup: arbitrary mix of registered communities, deposits, and users.
-- Operation: any sequence of `A.swapTokens(B, x)` calls.
-- Invariant: `sum over all registered communities of localTokens[c].depositedPCEToken` is unchanged by inter-community swaps. (PIP-17 redistributes between source and destination but neither mints nor burns deposit accounting.)
+1. **Standard swap.** `localTokens[A].depositedPCEToken = 100`, `localTokens[B].depositedPCEToken = 50`, and the user holds 30 A. The user calls `A.swapTokens(B, 30)`. Result: the user's A balance decreases by 30, B mints 30 to the user, `localTokens[A].depositedPCEToken = 70`, `localTokens[B].depositedPCEToken = 80`, and `TokensSwappedBetweenLocalTokens(user, A, B, 30, 30, 30)` is emitted.
+2. **Daily limits are not consumed.** After case 1, `A.getRemainingSwapableToPCEBalance()` and the user's individual remaining balance on A are unchanged. A direct swap larger than either remaining balance succeeds.
+3. **Allow lists.** A does not allow outgoing exchange to B, or B does not allow incoming exchange from A. Result: revert `"Outgo exchange not allowed"` or `"Income exchange not allowed"`.
+4. **Same token.** `A.swapTokens(A, 30)`. Result: revert `"Cannot swap to same token"`.
+5. **Unregistered target.** B is a community-token contract that is not registered in `PCEToken`. Result: revert `"Target token not found"`.
+6. **Caller check.** An EOA or an unregistered contract calls `PCEToken.swapBetweenLocalTokens`. Result: revert `"Caller must be a community token"`.
+7. **Outflow is counted.** `swapableToPCERate = 30%` and A's reserve at the start of the day is 1000. `getRemainingDailyPCEOutflow(A) = 300`. After a swap of 10 A to PCE, it is 290.
+8. **Cap by reserve.** A's reserve drops from 1000 to 100 without burning A (relayer fees). On the next day the supply-based limit is still about 300 A, but `A.getTodaySwapableToPCEBalance() = 30` and `A.getRemainingSwapableToPCEBalance() = 30`. A swap of 30 A to PCE succeeds; one more unit reverts with `"Exceeds daily swap limit"`. If the community token reported a larger remaining balance, `PCEToken` would still revert with `"Exceeds daily PCE outflow limit"`.
+9. **Inflow does not count today.** A user swaps 50 A to B, or anyone calls `swapToLocalToken` or `increaseTokenValue` on A. The remaining outflow of A and of B is unchanged today. On the next day, the cap is 30% of the new reserve. PCE that enters at 23:59:59 counts from 00:00:00.
+10. **New community.** On the day a community is created, its cap is 0. On the next day it is 30% of its reserve.
+11. **Split does not reopen the cap.** After a swap to PCE, the owner calls `splitToken` to double A's display supply. `getRemainingDailyPCEOutflow(A)` is unchanged.
+12. **Self-made community.** A holder creates community C and swaps 500 A to C. On the creation day C's cap is 0. On the next day, after splitting C twice, the PCE the holder can take out of C that day is at most 30% of C's reserve at the start of the day.
+13. **Fees.** After A's cap is used up, a relayer fee from A still succeeds and is not counted.
+14. **Signed direct swap.** `swapTokensWithAuthorization` does not change the individual remaining balance on A.
+15. **Reserve invariant.** For any sequence of direct swaps, the sum of `localTokens[c].depositedPCEToken` over all registered communities is unchanged. (This follows from step 5 of the algorithm and is not a separate test.)
 
 ### Security Considerations
 
-**Reentrancy.** `executeInterCommunitySwap` writes to PCEToken storage (`localTokens[fromToken].depositedPCEToken`, `localTokens[toToken].depositedPCEToken`), reads exchange rate / current factor, calls `PCECommunityToken(toToken).mint(recipient, toDisplayAmount)` (an external call into a registered community token), and emits an event. The only writes-then-external-call sequence is "deposit migration → destination mint." Both the source and destination community tokens are members of the trusted registry (`localTokens[*].isExists`), and `mint` is a non-reentrant operation against PCEToken (it does not call back into PCEToken). Because `fromToken == msg.sender` is enforced and `msg.sender` is already executing, there is no new reentrancy surface beyond what `swapTokens` already exposes. Implementations SHOULD nonetheless follow checks-effects-interactions ordering for the state mutations.
-
-**Caller authorization.** The `msg.sender == fromToken` check assumes `fromToken` is a registered community token, which is then confirmed by the `localTokens[fromToken].isExists` check. An attacker cannot deploy an arbitrary contract that masquerades as a community token to drain deposits, because the registry membership check is enforced. The destination `localTokens[toToken].isExists` check prevents redirecting deposit accounting into an unregistered address.
-
-**Source under-collateralization surfaces correctly.** Before PIP-17, the `swapTokens` path was non-functional (reverted at the destination-side `mint` auth check), so the question of under-collateralized exits via this path did not arise in practice. With `swapTokens` made functional by PIP-17, the path is also under deposit-cover semantics: an attempt to swap from a source whose recorded deposit is below the swap's PCE-equivalent will revert with `"Insufficient deposited PCE token reserve at source community"`. This matches the indirect path (`swapFromLocalToken`) and is the correct surfacing behavior. Communities and users SHOULD be aware that direct inter-community swap from an under-collateralized source will fail.
-
-**Front-running and ordering.** A user who observes a pending `swapTokens(B, large)` in the mempool and front-runs with `swapFromLocalToken(A, large)` may drain A's deposit and cause the pending direct swap to revert. Before PIP-17, the direct swap would have succeeded regardless. This is not a new attack vector — `swapFromLocalToken` is already first-come-first-served against A's deposit — but it now extends to inter-community swaps. The mitigation is the same as for ordinary swap-back: rely on per-block transaction ordering and the existing daily-swap limits.
-
-**Integer arithmetic.** The `movedPceAmount` formula uses `Math.mulDiv` to perform mulDiv-then-divide safely against overflow and to avoid precision loss. Implementations MUST use `Math.mulDiv` (or equivalent) and MUST NOT use the naive `(a * b) / c` form.
-
-**Cross-contract trust.** `executeInterCommunitySwap`'s authorization model depends on `localTokens[*].isExists` being only set for code that conforms to the PCECommunityToken contract (i.e., the registry is the trust boundary). Adding non-conformant code to the registry would be a governance failure outside the scope of this PIP, and would already break many other parts of the system. PIP-17 introduces no new risk in this dimension.
-
-**Event coverage for off-chain accounting.** `DepositTransferredOnInterCommunitySwap` is emitted on every successful migration, including the `movedPceAmount == 0` short-circuit. Off-chain indexers can rely on this event as the single source of truth for inter-community deposit migrations and reconcile it against `Transfer`-equivalent burns/mints on the community tokens themselves.
+- **Caller authorization.** `swapBetweenLocalTokens` MUST accept only registered community tokens as `msg.sender`, and MUST require the destination to be registered. An unregistered contract cannot move reserves.
+- **Burn before mint.** The source burns before calling `PCEToken`. If any later step reverts, the whole transaction reverts, including the burn.
+- **External calls.** The function calls only registered community tokens (`updateFactorIfNeeded`, `getCurrentFactor`, `mint`). The registry is the trust boundary, as it is for the existing swap functions.
+- **Daily limits.** A direct swap pays out no PCE, so the swap-to-PCE limits do not apply. A holder who goes A → B → PCE consumes B's limits on the last step. Because the community owner can inflate the supply that the supply-based limit uses, the reserve-based cap MUST bound swaps to PCE, and the snapshot MUST be taken before every change to the reserve. Missing one call would let PCE that entered today count toward today's cap.
+- **Relayer fees.** Fees stay outside the limits and the cap, as before. They are bounded by the fee settings and by `maxFee`.
+- **Ordering.** Direct swaps now compete with `swapFromLocalToken` for the source reserve, first come first served. This is the same property the indirect path already has.
 
 ### Notes
 
-- **What this proposal guarantees:** for every direct inter-community swap via `PCECommunityToken.swapTokens(toToken, amount)`, the per-community PCE deposit accounting in `PCEToken.localTokens[*].depositedPCEToken` is updated atomically and consistently with the indirect A→PCE→B path. The total `sum localTokens[c].depositedPCEToken` across all registered communities is invariant under inter-community swap.
-- **What this proposal does not guarantee:**
-  - That per-community deposits cover per-community claims at all times. ARIGATO CREATION mints continue to inflate community-token claims without inflating deposits, and PCE BASE Token decay continues to erode claims without changing deposits. Both effects are out of scope and are properties of the existing reserve model.
-  - That inter-community swap from an under-collateralized source succeeds. Such swaps will revert (Case 3). This is the intended hardening.
-  - Any change to daily swap limits. Inter-community swap continues to be unconstrained by `swappedToPCEToday`.
+- **Implementation:** `peacecoin-protocol/core` PRs #50 and #53, tag `v20`. PIP-22 builds on this PIP for its signed inter-community swap.
+- **Changes from the earlier draft (2026-05-01):** the new function is `swapBetweenLocalTokens(toToken, account, amount)` instead of `executeInterCommunitySwap(fromToken, toToken, recipient, fromDisplayAmount, toDisplayAmount)`; `PCEToken` computes the destination amount itself instead of receiving it; the event is `TokensSwappedBetweenLocalTokens`; a zero PCE equivalent reverts; swaps to PCE are also capped by the reserve at the start of the day. As in the earlier draft, the daily swap-to-PCE limits do not apply to the direct swap.
 - **Out of scope:**
-  - Treating inter-community swap as consumption of the per-community daily swap-to-PCE limit. A separable design decision; if pursued, it should be a follow-up PIP that adds an explicit `recordSwapToPCE`-like call from `swapTokens`.
-  - Backfilling pre-PIP-17 deposit drift. The on-chain state at the time of upgrade is the new baseline; correcting historical drift would require off-chain analysis and a one-shot governance reconciliation transaction, both of which are separable.
-  - Restructuring the per-community reserve model into a global pool, or any related change to `swapFromLocalToken`'s deposit check. Considered and explicitly rejected in favor of preserving per-community accounting.
-- **Dependencies:** none. PIP-17 is implementable on the current `peacecoin-protocol/core` codebase (post-PIP-14 ownership semantics if active, but no functional dependency on PIP-14).
-- **Implementation reference:** `peacecoin-protocol/core` — affected files are `src/PCEToken.sol` (new function and event) and `src/PCECommunityToken.sol` (replace `to.mint(...)` in `swapTokens` with the `pceToken.executeInterCommunitySwap(...)` call). No library changes (`src/lib/ArigatoCreation.sol`, `src/lib/TokenValueOps.sol`, `src/lib/TokenSetting.sol` are untouched).
+  - Correcting reserve drift from before the upgrade.
+  - The other known sources of difference between reserves and claims (ARIGATO CREATION mints and decay). They are properties of the existing reserve model.
+  - A global reserve pool.
