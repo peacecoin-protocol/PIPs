@@ -170,7 +170,7 @@ event AuthorizationExecuted(address indexed authorizer, bytes32 indexed nonce, b
 
 ### Test Cases
 
-Cases 1–12 are covered by the `peacecoin-protocol/core` test suite at `v20` (192 tests in total; mainly `test/BytesSignatureAuthorization.t.sol` and `test/ERC6492Signature.t.sol`). The amounts in cases 1 and 2 are illustrative. Amounts are display units with 18 decimals; factors and exchange rates are `1e18` unless noted.
+Cases 1–12 are covered by the `peacecoin-protocol/core` test suite at `v20` (199 tests in total; mainly `test/BytesSignatureAuthorization.t.sol` and `test/ERC6492Signature.t.sol`). The amounts in cases 1 and 2 are illustrative. Amounts are display units with 18 decimals; factors and exchange rates are `1e18` unless noted.
 
 1. **ERC-1271 transfer.** A contract wallet `W` holds 100 tokens. The relayer fee is 0.5 and `W` signs `TransferWithFeeAuthorization(W, bob, 10, maxFee = 1, ...)`. Result: `bob` receives 10, `W` loses 10.5 (in raw terms, rounded up for the fee), and the relayer receives the PCE value of 0.5.
 2. **Fee above cap.** As case 1 with the fee raised to 2. Result: revert `"Fee exceeds maxFee"`.
