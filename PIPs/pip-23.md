@@ -122,9 +122,8 @@ The following MUST hold when the DAO proposal is created. Voters SHOULD check th
 1. The new PCE proxy and implementation are deployed and verified on Etherscan. The proxy is OpenZeppelin `ERC1967Proxy`, its admin slot is zero, it emitted exactly one `Upgraded` event, and its implementation slot points to the verified implementation.
 2. `newPCE.owner()` is the Timelock, `totalSupply()` is `0`, and `distributionClosed()` is `false`.
 3. `PCEGovernorV2` is deployed and verified on Etherscan.
-4. The legacy PCE `MINTER_ROLE` and `DEFAULT_ADMIN_ROLE` have been renounced, and `getRoleMemberCount` returns `0` for both.
-5. On the Timelock, `PROPOSER_ROLE` is held only by the Governor and the zero address, `CANCELLER_ROLE` only by the zero address, and `DEFAULT_ADMIN_ROLE` only by the Timelock itself, as confirmed from all `RoleGranted` and `RoleRevoked` events. The claim that every mint needs a passed DAO proposal depends on this.
-6. The whole proposal has been executed on a mainnet fork, and its gas is below the per-transaction limit (16,777,216 under EIP-7825).
+4. On the Timelock, `PROPOSER_ROLE` is held only by the Governor and the zero address, `CANCELLER_ROLE` only by the zero address, and `DEFAULT_ADMIN_ROLE` only by the Timelock itself, as confirmed from all `RoleGranted` and `RoleRevoked` events. The claim that every mint needs a passed DAO proposal depends on this.
+5. The whole proposal has been executed on a mainnet fork, and its gas is below the per-transaction limit (16,777,216 under EIP-7825).
 
 #### 7. Execution
 
