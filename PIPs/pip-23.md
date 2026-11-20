@@ -92,7 +92,7 @@ The voting rules are unchanged: `votingDelay` 7,200 blocks, `votingPeriod` 21,60
 
 - Block 25904711 (hash `0x6dd75f8317957156f05c731d9ffee046d23b14813dc55ffc3e4dd7c065c41b74`), the last block before 2026-09-04 15:00:00 UTC. Balances at the end of this block are used.
 - Method: the candidate addresses are all addresses in the `Transfer` events of the token up to this block. The balance of each is `balanceOf` at this block, read from an archive node. The balances MUST equal the replay of the `Transfer` events, and their sum MUST equal `totalSupply()` at this block.
-- Legacy PCE (events since block 10219538): 134 holders, 222,156,723.49 PCE.
+- Legacy PCE (`0x7c28310CC0b8d898c57b93913098e74a3ba23228`, events since block 10219538): 134 holders, 222,156,723.49 PCE.
 - WPCE (events since block 23302929): 10 holders, 950,000 WPCE, equal to the legacy PCE held by WPCE.
 
 #### 4. Distribution rules
@@ -113,7 +113,7 @@ Before the DAO proposal is created, the following MUST be published, with SHA-25
 - a script that rebuilds the snapshot, the LP and WPCE allocations and the distribution table from the logs without network access;
 - the resulting CSV files, sorted by amount (descending), then address (ascending).
 
-[TBD: repository link and final hashes.]
+The files are in [`assets/pip-23`](../assets/pip-23/), and their hashes are in `assets/pip-23/SHA256SUMS` (SHA-256 `be07d04f95f2aaa100564b8d265ccfcc74a28835ceac3115ef78b9116a976a12`). `python3 -I build.py` rebuilds the CSV files, and `RPC_URL=<archive node> ETHERSCAN_API_KEY=<key> python3 -I verify.py` checks the logs and balances.
 
 #### 6. Prerequisites before the DAO proposal
 
@@ -143,7 +143,7 @@ With the current settings, execution is possible about six days after the propos
 - **The Timelock owns the token from deployment.** No individual holds minting or upgrade rights at any time, even briefly.
 - **The distribution is the DAO's own action.** Voters approve the exact recipients and amounts that are executed.
 - **WPCE holders receive new PCE directly.** Sending new PCE to the WPCE contract would require upgrading WPCE and stopping wrapping and unwrapping until the switch. Distributing to the WPCE holders needs no change to WPCE.
-- **Direct distribution in one call.** With 138 recipients, direct distribution is cheap (estimated about 4 million gas, to be replaced by the fork measurement) and avoids claim transactions and unclaimed balances.
+- **Direct distribution in one call.** With 138 recipients, direct distribution is cheap (about 4.8 million gas for the whole proposal on a mainnet fork, or about 11.3 million if every recipient has delegated beforehand) and avoids claim transactions and unclaimed balances.
 - **Liquidity providers instead of pairs.** This follows the token migration documented by Sonic (FTM to S).
 - **Minting only through `distribute`.** The DAO keeps the ability to make the additional issuance and decides by vote when to close it. Ongoing issuance tied to the bridge or ARIGATO CREATION is left to later proposals.
 - **Voting moves with the token, in the same proposal.** The official PCE and the voting token change together, and no holder can vote with both.
