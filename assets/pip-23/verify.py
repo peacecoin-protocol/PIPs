@@ -18,6 +18,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# The checks below use assert; refuse to run when Python strips them (-O or PYTHONOPTIMIZE).
+if not __debug__:
+    raise SystemExit("verify.py must not run with python -O or PYTHONOPTIMIZE")
+
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build import LEGACY_PCE, PAIRS, SNAPSHOT_BLOCK, TRANSFER, WPCE, ordered, replay  # noqa: E402

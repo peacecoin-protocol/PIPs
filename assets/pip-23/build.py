@@ -11,6 +11,10 @@ from collections import defaultdict
 from decimal import Decimal
 from pathlib import Path
 
+# The checks below use assert; refuse to run when Python strips them (-O or PYTHONOPTIMIZE).
+if not __debug__:
+    raise SystemExit("build.py must not run with python -O or PYTHONOPTIMIZE")
+
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent
 IN, OUT = ROOT / 'inputs', ROOT / 'out'
 SNAPSHOT_BLOCK = 25904711
