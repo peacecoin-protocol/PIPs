@@ -91,6 +91,7 @@ The voting rules are unchanged: `votingDelay` 7,200 blocks, `votingPeriod` 21,60
 #### 3. Snapshot
 
 - Block 25904711 (hash `0x6dd75f8317957156f05c731d9ffee046d23b14813dc55ffc3e4dd7c065c41b74`), the last block before 2026-09-04 15:00:00 UTC. Balances at the end of this block are used.
+- Reason: from 2026-09-04 15:00 UTC, abnormal trading and a sharp price drop occurred in the PCE/USDT market. The snapshot is taken just before that time, so that their effects are not carried into the migration to the new PCE.
 - Method: the candidate addresses are all addresses in the `Transfer` events of the token up to this block. The balance of each is `balanceOf` at this block, read from an archive node. The balances MUST equal the replay of the `Transfer` events, and their sum MUST equal `totalSupply()` at this block.
 - Legacy PCE (`0x7c28310CC0b8d898c57b93913098e74a3ba23228`, events since block 10219538): 134 holders, 222,156,723.49 PCE.
 - WPCE (events since block 23302929): 10 holders, 950,000 WPCE, equal to the legacy PCE held by WPCE.
