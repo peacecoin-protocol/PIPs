@@ -67,7 +67,7 @@ interface IPCEToken {
 
 #### 2. Governor upgrade
 
-The Ethereum Governor (proxy `0x00831a36ce3535effefe54bad0bb8de27687a237`, implementation `0x911c1f527651374ba6546b1f1510832084af5208`) is upgraded to `PCEGovernorV2`, which extends the current `PCEGovernor`. It MUST keep the storage layout and pass the OpenZeppelin upgrades validator against the current implementation. Its constructor MUST call `_disableInitializers()`.
+The Ethereum Governor (proxy `0x00831a36ce3535effefe54bad0bb8de27687a237`, implementation `0x911c1f527651374ba6546b1f1510832084af5208`) is upgraded to `PCEGovernorV2`, which extends the current `PCEGovernor` and adds only `switchVotingToken`. It MUST be built with the same OpenZeppelin Contracts Upgradeable version (5.0.2), compiler version (0.8.26) and compiler settings as the verified current implementation, so that no other Governor behavior changes. It MUST keep the storage layout and pass the OpenZeppelin upgrades validator against the current implementation.
 
 ```solidity
 /// @notice Switches the token whose votes the Governor counts.
@@ -123,7 +123,7 @@ The following MUST hold when the DAO proposal is created. Voters SHOULD check th
 2. `newPCE.owner()` is the Timelock, `totalSupply()` is `0`, and `distributionClosed()` is `false`.
 3. `PCEGovernorV2` is deployed and verified on Etherscan.
 4. The legacy PCE `MINTER_ROLE` and `DEFAULT_ADMIN_ROLE` have been renounced, and `getRoleMemberCount` returns `0` for both.
-5. On the Timelock, `PROPOSER_ROLE` is held only by the Governor and the zero address, and `DEFAULT_ADMIN_ROLE` only by the Timelock itself, as confirmed from all `RoleGranted` and `RoleRevoked` events. The claim that every mint needs a passed DAO proposal depends on this.
+5. On the Timelock, `PROPOSER_ROLE` is held only by the Governor and the zero address, `CANCELLER_ROLE` only by the zero address, and `DEFAULT_ADMIN_ROLE` only by the Timelock itself, as confirmed from all `RoleGranted` and `RoleRevoked` events. The claim that every mint needs a passed DAO proposal depends on this.
 6. The whole proposal has been executed on a mainnet fork, and its gas is below the per-transaction limit (16,777,216 under EIP-7825).
 
 #### 7. Execution
@@ -134,7 +134,7 @@ The following MUST hold when the DAO proposal is created. Voters SHOULD check th
 
    A failed vote is retried with the same actions and a new description.
 2. Both actions run in one transaction through the Timelock's `executeBatch`, so both take effect or neither does. Proposals created afterwards use new PCE votes.
-3. No other proposal SHOULD be Pending, Active, Succeeded or Queued at execution. Votes already cast stay counted and passed proposals stay executable, but later votes on an open proposal are weighted by the new PCE at its snapshot block, which is zero before the distribution.
+3. No other proposal SHOULD be Pending, Active, Succeeded or Queued at execution.
 4. `closeDistribution()` is not called by this PIP. Until a later PIP calls it, new PCE can be minted only by a passed DAO proposal.
 
 With the current settings, execution is possible about six days after the proposal is created: about one day before voting, three days of voting and two days of Timelock delay.
@@ -164,7 +164,7 @@ With the current settings, execution is possible about six days after the propos
 - `balanceOf(0x64804de3708478390bd7def274deee66070ec34b)` is `53286622890000000000000000`.
 - `balanceOf(0x659ae334442e2a5425e0b811b144bc507b05a6ee)` is `1013629267634484359053979` (own `999820000000000000000000` plus LP share `13809267634484359053979`).
 - `balanceOf(0x9052d3da7eebdf4f2b77d1c87fea31c6f789e964)` is `1000000000000000000000000` (own `800000000000000000000000` plus WPCE `200000000000000000000000`).
-- `balanceOf` of the WPCE contract, and the Uniswap V2 pairs is `0`.
+- `balanceOf` of the WPCE contract and the Uniswap V2 pairs is `0`.
 - Executing the table emits 138 `Distributed` events.
 - `distribute` from any account other than the Timelock reverts with `OwnableUnauthorizedAccount`; each invalid input listed in Specification 1 reverts with its error.
 - After `closeDistribution()`, `distribute` and a second `closeDistribution()` revert with `DistributionIsClosed()`.
@@ -179,10 +179,8 @@ With the current settings, execution is possible about six days after the propos
 ### Security Considerations
 
 - **No cancellation.** No account can cancel on the Ethereum Timelock, so a passed proposal cannot be stopped during the delay.
-- **Table integrity.** Voters SHOULD compare the proposal calldata with the published table.
 - **Upgrade power.** The Timelock can upgrade the new PCE and the Governor, including adding minting. This is the same trust as the existing Polygon PCE and community tokens.
 - **Low participation after the switch.** No votes exist in the new PCE until holders delegate. Holders SHOULD be asked to delegate as soon as the new PCE address is published.
-- **Legacy minter.** The legacy roles MUST be renounced before the proposal (Specification 6), so that no account keeps control of the legacy supply.
 - **Impersonation.** Fake tokens and claim sites can appear. The official address MUST be announced only through official channels, and announcements SHOULD say that no claim is needed.
 
 ### Notes
