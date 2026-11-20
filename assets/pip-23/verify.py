@@ -2,10 +2,12 @@
 
 Usage: RPC_URL=<archive node URL> ETHERSCAN_API_KEY=<key> python3 -I verify.py [DATA_DIR]
 
+0. Checks that the node is on Ethereum mainnet and that the snapshot block
+   has the hash given in PIP-23.
 1. Fetches the Transfer logs of each token up to the snapshot block from the
    Etherscan API and checks that they equal the saved logs.
 2. For every address in those logs, checks that balanceOf at the snapshot
-   block equals the replayed balance, and that the balances sum to
+   block equals the replayed balance, and that these balances sum to
    totalSupply at the snapshot block.
 """
 import json
@@ -18,10 +20,11 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build import LEGACY_PCE, PAIRS, SNAPSHOT_BLOCK, TRANSFER, WPCE, ZERO, ordered, replay  # noqa: E402
+from build import LEGACY_PCE, PAIRS, SNAPSHOT_BLOCK, TRANSFER, WPCE, ordered, replay  # noqa: E402
 
 RPC_URL = os.environ['RPC_URL']
 ETHERSCAN_API_KEY = os.environ['ETHERSCAN_API_KEY']
+SNAPSHOT_HASH = '0x6dd75f8317957156f05c731d9ffee046d23b14813dc55ffc3e4dd7c065c41b74'
 # Pairs cannot exist before the legacy PCE, so their search also starts at its creation block.
 CREATION = {LEGACY_PCE: 10219538, WPCE: 23302929, PAIRS[0]: 10219538, PAIRS[1]: 10219538}
 
@@ -67,7 +70,7 @@ def hexint(value):
 
 
 def key(log):
-    return (hexint(log['blockNumber']), hexint(log['logIndex']), log['transactionHash'].lower(),
+    return (hexint(log['blockNumber']), log['blockHash'].lower(), hexint(log['logIndex']), log['transactionHash'].lower(),
             tuple(t.lower() for t in log['topics']), hexint(log['data']))
 
 
@@ -81,15 +84,25 @@ def check(token, saved):
     print(f'{token}: fetched {len(fetched)} logs', flush=True)
     assert sorted(map(key, fetched)) == sorted(map(key, saved)), f'{token}: logs differ'
     bal, supply = replay(ordered(saved), token, SNAPSHOT_BLOCK)
-    addresses = {'0x' + t[-40:] for log in saved for t in log['topics'][1:3]} - {ZERO}
-    for a in sorted(addresses):
-        assert call_uint(token, '0x70a08231' + a[2:].rjust(64, '0')) == bal.get(a, 0), f'{token}: {a}'
+    # The zero address is included: Uniswap V2 pairs lock their minimum liquidity there.
+    addresses = {'0x' + t[-40:] for log in saved for t in log['topics'][1:3]}
+    balances = {a: call_uint(token, '0x70a08231' + a[2:].rjust(64, '0')) for a in sorted(addresses)}
+    for a, b in balances.items():
+        assert b == bal.get(a, 0), f'{token}: {a}'
     total = call_uint(token, '0x18160ddd')
-    assert total == supply, f'{token}: totalSupply'
+    assert total == supply == sum(balances.values()), f'{token}: totalSupply'
     print(f'{token}: {len(saved)} logs, {len(addresses)} addresses, totalSupply {total}: OK')
 
 
+def check_chain():
+    assert int(rpc('eth_chainId', []), 16) == 1, 'not Ethereum mainnet'
+    block = rpc('eth_getBlockByNumber', [hex(SNAPSHOT_BLOCK), False])
+    assert block['hash'].lower() == SNAPSHOT_HASH, 'snapshot block hash differs'
+    print(f'chain 1, block {SNAPSHOT_BLOCK} {SNAPSHOT_HASH}: OK', flush=True)
+
+
 def main():
+    check_chain()
     inputs = ROOT / 'inputs'
     check(LEGACY_PCE, json.loads((inputs / 'legacy_pce_transfer_logs.json').read_text())['logs'])
     check(WPCE, json.loads((inputs / 'wpce_transfer_logs.json').read_text())['logs'])

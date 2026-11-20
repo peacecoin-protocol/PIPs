@@ -113,7 +113,7 @@ Before the DAO proposal is created, the following MUST be published, with SHA-25
 - a script that rebuilds the snapshot, the LP and WPCE allocations and the distribution table from the logs without network access;
 - the resulting CSV files, sorted by amount (descending), then address (ascending).
 
-The files are in [`assets/pip-23`](../assets/pip-23/), and their hashes are in `assets/pip-23/SHA256SUMS` (SHA-256 `be07d04f95f2aaa100564b8d265ccfcc74a28835ceac3115ef78b9116a976a12`). `python3 -I build.py` rebuilds the CSV files, and `RPC_URL=<archive node> ETHERSCAN_API_KEY=<key> python3 -I verify.py` checks the logs and balances.
+The files are in [`assets/pip-23`](../assets/pip-23/), and their hashes are in `assets/pip-23/SHA256SUMS` (SHA-256 `94c2a0a1a3031b886acb76c223c559ad91c882b19477f93c34ecc948045cbe6d`). `python3 -I build.py` rebuilds the CSV files, and `RPC_URL=<archive node> ETHERSCAN_API_KEY=<key> python3 -I verify.py` checks the logs and balances.
 
 #### 6. Prerequisites before the DAO proposal
 
